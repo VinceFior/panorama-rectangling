@@ -31,6 +31,7 @@ Image* ip_gray (Image* src);
 Image* ip_energy(Image* src);
 Image* ip_show_seam(Image* src, SeamOrientation orientation);
 Image* ip_carve_seams(Image* src, SeamOrientation orientation, int numSeams);
+Image* ip_insert_seams(Image* src, SeamOrientation orientation, int numSeams);
 Image* ip_rectangle(Image* src);
 
 #endif /* defined(__FinalProjectPanorama__ip__) */

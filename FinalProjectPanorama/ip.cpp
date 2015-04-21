@@ -477,7 +477,116 @@ Image* ip_carve_seams(Image* src, SeamOrientation orientation, int numSeams)
         // this case should never happen
         return nullptr;
     }
-    
+}
+
+/*
+ * Returns a new image with the lowest-cost seam duplicated.
+ */
+Image* ip_insert_seam(Image* src, SeamOrientation orientation)
+{
+    int srcWidth = src->getWidth();
+    int srcHeight = src->getHeight();
+    if (orientation == ORIENTATION_VERTICAL) {
+        int outputWidth = srcWidth + 1;
+        int outputHeight = srcHeight;
+        // note: this step wastefully calls the underlying get_seam method twice
+        int *seam = ip_get_seam(src, orientation);
+        Image *outputImage = new Image(outputWidth, outputHeight);
+        for (int x = 0; x < outputWidth; x++) {
+            for (int y = 0; y < outputHeight; y++) {
+                if (x == seam[y]) {
+                    // average
+                    int srcX = x - 1;
+                    if (srcX - 1 >= 0 && srcX + 1 < srcWidth) {
+                        Pixel leftPixel = src->getPixel(srcX - 1, y);
+                        Pixel rightPixel = src->getPixel(srcX + 1, y);
+                        Pixel averagePixel = Pixel();
+                        averagePixel.setColor(RED, (leftPixel.getColor(RED) + rightPixel.getColor(RED)) / 2);
+                        averagePixel.setColor(GREEN, (leftPixel.getColor(GREEN) + rightPixel.getColor(GREEN)) / 2);
+                        averagePixel.setColor(BLUE, (leftPixel.getColor(BLUE) + rightPixel.getColor(BLUE)) / 2);
+                        outputImage->setPixel(x, y, averagePixel);
+                    } else if (srcX - 1 >= 0) {
+                        Pixel leftPixel = src->getPixel(srcX - 1, y);
+                        outputImage->setPixel(x, y, leftPixel);
+                    } else if (srcX + 1 < outputWidth) {
+                        Pixel rightPixel = src->getPixel(srcX + 1, y);
+                        outputImage->setPixel(x, y, rightPixel);
+                    } else {
+                        Pixel srcPixel = src->getPixel(srcX, y);
+                        outputImage->setPixel(x, y, srcPixel);
+                    }
+                } else if (x > seam[y]) {
+                    // shift
+                    int srcX = x - 1;
+                    Pixel srcPixel = src->getPixel(srcX, y);
+                    outputImage->setPixel(x, y, srcPixel);
+                } else {
+                    // do nothing
+                    Pixel srcPixel = src->getPixel(x, y);
+                    outputImage->setPixel(x, y, srcPixel);
+                }
+            }
+        }
+        return outputImage;
+    } else if (orientation == ORIENTATION_HORIZONTAL) {
+        int outputWidth = srcWidth;
+        int outputHeight = srcHeight + 1;
+        // note: this step wastefully calls the underlying get_seam method twice
+        int *seam = ip_get_seam(src, orientation);
+        Image *outputImage = new Image(outputWidth, outputHeight);
+        for (int x = 0; x < outputWidth; x++) {
+            for (int y = 0; y < outputHeight; y++) {
+                if (y == seam[x]) {
+                    // average
+                    int srcY = y - 1;
+                    if (srcY - 1 >= 0 && srcY + 1 < srcHeight) {
+                        Pixel topPixel = src->getPixel(x, srcY - 1);
+                        Pixel bottomPixel = src->getPixel(x, srcY + 1);
+                        Pixel averagePixel = Pixel();
+                        averagePixel.setColor(RED, (topPixel.getColor(RED) + bottomPixel.getColor(RED)) / 2);
+                        averagePixel.setColor(GREEN, (topPixel.getColor(GREEN) + bottomPixel.getColor(GREEN)) / 2);
+                        averagePixel.setColor(BLUE, (topPixel.getColor(BLUE) + bottomPixel.getColor(BLUE)) / 2);
+                        outputImage->setPixel(x, y, averagePixel);
+                    } else if (srcY - 1 >= 0) {
+                        Pixel topPixel = src->getPixel(x, srcY - 1);
+                        outputImage->setPixel(x, y, topPixel);
+                    } else if (srcY + 1 < outputHeight) {
+                        Pixel bottomPixel = src->getPixel(x, srcY + 1);
+                        outputImage->setPixel(x, y, bottomPixel);
+                    } else {
+                        Pixel srcPixel = src->getPixel(x, srcY);
+                        outputImage->setPixel(x, y, srcPixel);
+                    }
+                } else if (y > seam[x]) {
+                    // shift
+                    int srcY = y - 1;
+                    Pixel srcPixel = src->getPixel(x, srcY);
+                    outputImage->setPixel(x, y, srcPixel);
+                } else {
+                    // do nothing
+                    Pixel srcPixel = src->getPixel(x, y);
+                    outputImage->setPixel(x, y, srcPixel);
+                }
+            }
+        }
+        return outputImage;
+    } else {
+        // this case should never happen
+        return nullptr;
+    }
+}
+
+/*
+ * Inserts numSeams seams into the image by repeatedly inserting one seam. Note that this means all
+ * the inserted seams will be the same.
+ */
+Image* ip_insert_seams(Image* src, SeamOrientation orientation, int numSeams)
+{
+    Image* resultImage = new Image(*src);
+    for (int i = 0; i < numSeams; i++) {
+        resultImage = ip_insert_seam(resultImage, orientation);
+    }
+    return resultImage;
 }
 
 /*

@@ -30,6 +30,8 @@ enum MenuItem {
     MENU_PROCESS_CARVE_HORIZONTAL_SEAM,
     MENU_PROCESS_CARVE_VERTICAL_SEAMS,
     MENU_PROCESS_CARVE_HORIZONTAL_SEAMS,
+    MENU_PROCESS_INSERT_VERTICAL_SEAMS,
+    MENU_PROCESS_INSERT_HORIZONTAL_SEAMS,
     MENU_PROCESS_RECTANGLE,
 };
 
@@ -52,6 +54,8 @@ int make_menu ()
     glutAddMenuEntry("Carve horizontal seam", MENU_PROCESS_CARVE_HORIZONTAL_SEAM);
     glutAddMenuEntry("Carve vertical seams..", MENU_PROCESS_CARVE_VERTICAL_SEAMS);
     glutAddMenuEntry("Carve horizontal seams..", MENU_PROCESS_CARVE_HORIZONTAL_SEAMS);
+    glutAddMenuEntry("Insert vertical seams..", MENU_PROCESS_INSERT_VERTICAL_SEAMS);
+    glutAddMenuEntry("Insert horizontal seams..", MENU_PROCESS_INSERT_HORIZONTAL_SEAMS);
     glutAddMenuEntry("Rectangle", MENU_PROCESS_RECTANGLE);
     
     int main = glutCreateMenu(menu_func);
@@ -179,6 +183,24 @@ void process_func (int value)
             cin >> numSeams;
             cerr << "Carving.." << endl;
             resultImage = ip_carve_seams(currentImage, ORIENTATION_HORIZONTAL, numSeams);
+            break;
+        
+        case MENU_PROCESS_INSERT_VERTICAL_SEAMS:
+            if (!quietMode) {
+                cerr << "Number of vertical seams to insert: ";
+            }
+            cin >> numSeams;
+            cerr << "Inserting.." << endl;
+            resultImage = ip_insert_seams(currentImage, ORIENTATION_VERTICAL, numSeams);
+            break;
+            
+        case MENU_PROCESS_INSERT_HORIZONTAL_SEAMS:
+            if (!quietMode) {
+                cerr << "Number of horizontal seams to insert: ";
+            }
+            cin >> numSeams;
+            cerr << "Inserting.." << endl;
+            resultImage = ip_insert_seams(currentImage, ORIENTATION_HORIZONTAL, numSeams);
             break;
             
         case MENU_PROCESS_RECTANGLE: {
