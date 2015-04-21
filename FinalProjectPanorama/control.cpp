@@ -25,7 +25,11 @@ enum MenuItem {
     MENU_PROCESS_GRAY,
     MENU_PROCESS_ENERGY,
     MENU_PROCESS_SHOW_VERTICAL_SEAM,
+    MENU_PROCESS_SHOW_HORIZONTAL_SEAM,
+    MENU_PROCESS_CARVE_VERTICAL_SEAM,
+    MENU_PROCESS_CARVE_HORIZONTAL_SEAM,
     MENU_PROCESS_CARVE_VERTICAL_SEAMS,
+    MENU_PROCESS_CARVE_HORIZONTAL_SEAMS,
     MENU_PROCESS_RECTANGLE,
 };
 
@@ -42,8 +46,12 @@ int make_menu ()
     int process = glutCreateMenu(menu_func);
     glutAddMenuEntry("Grayscale", MENU_PROCESS_GRAY);
     glutAddMenuEntry("Energy", MENU_PROCESS_ENERGY);
-    glutAddMenuEntry("Show seam", MENU_PROCESS_SHOW_VERTICAL_SEAM);
+    glutAddMenuEntry("Show vertical seam", MENU_PROCESS_SHOW_VERTICAL_SEAM);
+    glutAddMenuEntry("Show horizontal seam", MENU_PROCESS_SHOW_HORIZONTAL_SEAM);
+    glutAddMenuEntry("Carve vertical seam", MENU_PROCESS_CARVE_VERTICAL_SEAM);
+    glutAddMenuEntry("Carve horizontal seam", MENU_PROCESS_CARVE_HORIZONTAL_SEAM);
     glutAddMenuEntry("Carve vertical seams..", MENU_PROCESS_CARVE_VERTICAL_SEAMS);
+    glutAddMenuEntry("Carve horizontal seams..", MENU_PROCESS_CARVE_HORIZONTAL_SEAMS);
     glutAddMenuEntry("Rectangle", MENU_PROCESS_RECTANGLE);
     
     int main = glutCreateMenu(menu_func);
@@ -139,7 +147,19 @@ void process_func (int value)
             break;
         
         case MENU_PROCESS_SHOW_VERTICAL_SEAM:
-            resultImage = ip_show_vertical_seam(currentImage);
+            resultImage = ip_show_seam(currentImage, ORIENTATION_VERTICAL);
+            break;
+            
+        case MENU_PROCESS_SHOW_HORIZONTAL_SEAM:
+            resultImage = ip_show_seam(currentImage, ORIENTATION_HORIZONTAL);
+            break;
+        
+        case MENU_PROCESS_CARVE_VERTICAL_SEAM:
+            resultImage = ip_carve_seams(currentImage, ORIENTATION_VERTICAL, 1);
+            break;
+            
+        case MENU_PROCESS_CARVE_HORIZONTAL_SEAM:
+            resultImage = ip_carve_seams(currentImage, ORIENTATION_HORIZONTAL, 1);
             break;
         
         case MENU_PROCESS_CARVE_VERTICAL_SEAMS:
@@ -149,7 +169,16 @@ void process_func (int value)
             }
             cin >> numSeams;
             cerr << "Carving.." << endl;
-            resultImage = ip_carve_vertical_seams(currentImage, numSeams);
+            resultImage = ip_carve_seams(currentImage, ORIENTATION_VERTICAL, numSeams);
+            break;
+            
+        case MENU_PROCESS_CARVE_HORIZONTAL_SEAMS:
+            if (!quietMode) {
+                cerr << "Number of horizontal seams to carve: ";
+            }
+            cin >> numSeams;
+            cerr << "Carving.." << endl;
+            resultImage = ip_carve_seams(currentImage, ORIENTATION_HORIZONTAL, numSeams);
             break;
             
         case MENU_PROCESS_RECTANGLE: {
@@ -184,6 +213,21 @@ void process_func (int value)
 void keyboard_func (unsigned char key, int x, int y)
 {
     switch (key) {
+        case 'X':
+        case 'x':
+            menu_func(MENU_PROCESS_CARVE_VERTICAL_SEAM);
+            break;
+            
+        case 'C':
+        case 'c':
+            menu_func(MENU_PROCESS_CARVE_HORIZONTAL_SEAM);
+            break;
+            
+        case 'R':
+        case 'r':
+            menu_func(MENU_FILE_REVERT);
+            break;
+            
         case 'O':
         case 'o':
             menu_func(MENU_FILE_OPEN);
