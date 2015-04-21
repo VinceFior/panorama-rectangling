@@ -116,6 +116,88 @@ double ip_get_energy(Image* src, int x, int y)
 }
 
 /*
+ * Returns the forward energy given a pixel and its neighbor that are being removed.
+ */
+double ip_get_forward_energy(Image* src, int x, int y, NeighborDirection direction)
+{
+    int width = src->getWidth();
+    int height = src->getHeight();
+    double energy = 0;
+    if (direction == DIRECTION_TOP_LEFT) {
+        if (x <= 0 || y <= 0) {
+            return energy;
+        }
+        Pixel bottomLeftPixel = src->getPixel(x - 1, y);
+        // add top and right
+        Pixel topPixel = src->getPixel(x, y - 1);
+        energy += fabs(ip_get_intensity(topPixel) - ip_get_intensity(bottomLeftPixel));
+        if (x + 1 < width) {
+            Pixel rightPixel = src->getPixel(x + 1, y);
+            energy += fabs(ip_get_intensity(rightPixel) - ip_get_intensity(bottomLeftPixel));
+        }
+        return energy;
+    } else if (direction == DIRECTION_TOP) {
+        // add left and right
+        if (x - 1 >= 0 && x + 1 < width) {
+            Pixel leftPixel = src->getPixel(x - 1, y);
+            Pixel rightPixel = src->getPixel(x + 1, y);
+            energy += fabs(ip_get_intensity(leftPixel) - ip_get_intensity(rightPixel));
+        }
+        return energy;
+    } else if (direction == DIRECTION_TOP_RIGHT) {
+        if (x >= width - 1 || y <= 0) {
+            return energy;
+        }
+        Pixel bottomRightPixel = src->getPixel(x + 1, y);
+        // add top and left
+        Pixel topPixel = src->getPixel(x, y - 1);
+        energy += fabs(ip_get_intensity(topPixel) - ip_get_intensity(bottomRightPixel));
+        if (x - 1 >= 0) {
+            Pixel leftPixel = src->getPixel(x - 1, y);
+            energy += fabs(ip_get_intensity(leftPixel) - ip_get_intensity(bottomRightPixel));
+        }
+        return energy;
+    } else if (direction == DIRECTION_LEFT_TOP) {
+        if (x <= 0 || y <= 0) {
+            return energy;
+        }
+        Pixel topRightPixel = src->getPixel(x, y - 1);
+        // add left and bottom
+        Pixel leftPixel = src->getPixel(x - 1, y);
+        energy += fabs(ip_get_intensity(leftPixel) - ip_get_intensity(topRightPixel));
+        if (y + 1 < height) {
+            Pixel bottomPixel = src->getPixel(x, y + 1);
+            energy += fabs(ip_get_intensity(bottomPixel) - ip_get_intensity(topRightPixel));
+        }
+        return energy;
+    } else if (direction == DIRECTION_LEFT) {
+        // add top and bottom
+        if (y - 1 >= 0 && y + 1 < height) {
+            Pixel topPixel = src->getPixel(x, y - 1);
+            Pixel bottomPixel = src->getPixel(x, y + 1);
+            energy += fabs(ip_get_intensity(topPixel) - ip_get_intensity(bottomPixel));
+        }
+        return energy;
+    } else if (direction == DIRECTION_LEFT_BOTTOM) {
+        if (x <= 0 || y >= height - 1) {
+            return energy;
+        }
+        Pixel bottomRightPixel = src->getPixel(x, y + 1);
+        // add top and left
+        if (y - 1 >= 0) {
+            Pixel topPixel = src->getPixel(x, y - 1);
+            energy += fabs(ip_get_intensity(topPixel) - ip_get_intensity(bottomRightPixel));
+        }
+        Pixel leftPixel = src->getPixel(x - 1, y);
+        energy += fabs(ip_get_intensity(leftPixel) - ip_get_intensity(bottomRightPixel));
+        return energy;
+    } else {
+        // this case shouldn't happen
+        return 0;
+    }
+}
+
+/*
  * Shows the energy of each pixel.
  */
 Image* ip_energy(Image* src)
@@ -135,7 +217,7 @@ Image* ip_energy(Image* src)
 }
 
 /*
- * Computes the lowest-energy seam in the range [start, end] and returns the
+ * Computes the lowest-energy seam in the range [start, end] using forward energy and returns the
  * coordinates of its pixels. Start is top/left, end is bottom/right.
  */
 int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, int end)
@@ -172,24 +254,24 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
                     energyTable[x][tableY] = ip_get_energy(src, x, y);
                     parentTable[x][tableY] = -1; // a pixel in the top row has no parent
                 } else {
-                    double energyOfPathToTop = energyTable[x][tableY - 1];
+                    double energyOfPathFromTop = energyTable[x][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP);
                     // the energies of the paths to top left or top right depend on the neighbor existing
-                    double energyOfPathToTopLeft = INFINITY;
-                    double energyOfPathToTopRight = INFINITY;
+                    double energyOfPathFromTopLeft = INFINITY;
+                    double energyOfPathFromTopRight = INFINITY;
                     if (x > 0) {
-                        energyOfPathToTopLeft = energyTable[x - 1][tableY - 1];
+                        energyOfPathFromTopLeft = energyTable[x - 1][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP_LEFT);
                     }
                     if (x + 1 < srcWidth) {
-                        energyOfPathToTopRight = energyTable[x + 1][tableY - 1];
+                        energyOfPathFromTopRight = energyTable[x + 1][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP_RIGHT);
                     }
-                    double minParentEnergy = min(energyOfPathToTop, min(energyOfPathToTopLeft, energyOfPathToTopRight));
+                    double minParentEnergy = min(energyOfPathFromTop, min(energyOfPathFromTopLeft, energyOfPathFromTopRight));
                     energyTable[x][tableY] = ip_get_energy(src, x, y) + minParentEnergy;
                     
-                    if (minParentEnergy == energyOfPathToTop) {
+                    if (minParentEnergy == energyOfPathFromTop) {
                         parentTable[x][tableY] = x;
-                    } else if (minParentEnergy == energyOfPathToTopLeft) {
+                    } else if (minParentEnergy == energyOfPathFromTopLeft) {
                         parentTable[x][tableY] = x - 1;
-                    } else { // energyOfPathToTopRight
+                    } else { // energyOfPathFromTopRight
                         parentTable[x][tableY] = x + 1;
                     }
                 }
@@ -203,24 +285,24 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
                     energyTable[tableX][y] = ip_get_energy(src, x, y);
                     parentTable[tableX][y] = -1; // a pixel in the leftmost row has no parent
                 } else {
-                    double energyOfPathToLeft = energyTable[tableX - 1][y];
+                    double energyOfPathFromLeft = energyTable[tableX - 1][y] + ip_get_forward_energy(src, x, y, DIRECTION_LEFT);
                     // the energies of the paths to left top or left bottom depend on the neighbor existing
-                    double energyOfPathToLeftTop = INFINITY;
-                    double energyOfPathToLeftBottom = INFINITY;
+                    double energyOfPathFromLeftTop = INFINITY;
+                    double energyOfPathFromLeftBottom = INFINITY;
                     if (y > 0) {
-                        energyOfPathToLeftTop = energyTable[tableX - 1][y - 1];
+                        energyOfPathFromLeftTop = energyTable[tableX - 1][y - 1] + ip_get_forward_energy(src, x, y, DIRECTION_LEFT_TOP);
                     }
                     if (y + 1 < srcHeight) {
-                        energyOfPathToLeftBottom = energyTable[tableX - 1][y + 1];
+                        energyOfPathFromLeftBottom = energyTable[tableX - 1][y + 1] + ip_get_forward_energy(src, x, y, DIRECTION_LEFT_BOTTOM);
                     }
-                    double minParentEnergy = min(energyOfPathToLeft, min(energyOfPathToLeftTop, energyOfPathToLeftBottom));
+                    double minParentEnergy = min(energyOfPathFromLeft, min(energyOfPathFromLeftTop, energyOfPathFromLeftBottom));
                     energyTable[tableX][y] = ip_get_energy(src, x, y) + minParentEnergy;
                     
-                    if (minParentEnergy == energyOfPathToLeft) {
+                    if (minParentEnergy == energyOfPathFromLeft) {
                         parentTable[tableX][y] = y;
-                    } else if (minParentEnergy == energyOfPathToLeftTop) {
+                    } else if (minParentEnergy == energyOfPathFromLeftTop) {
                         parentTable[tableX][y] = y - 1;
-                    } else { // energyOfPathToLeftBottom
+                    } else { // energyOfPathFromLeftBottom
                         parentTable[tableX][y] = y + 1;
                     }
                 }

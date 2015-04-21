@@ -18,6 +18,15 @@ enum SeamOrientation {
     ORIENTATION_HORIZONTAL
 };
 
+enum NeighborDirection {
+    DIRECTION_TOP_LEFT,
+    DIRECTION_TOP,
+    DIRECTION_TOP_RIGHT,
+    DIRECTION_LEFT_TOP,
+    DIRECTION_LEFT,
+    DIRECTION_LEFT_BOTTOM
+};
+
 Image* ip_gray (Image* src);
 Image* ip_energy(Image* src);
 Image* ip_show_seam(Image* src, SeamOrientation orientation);
