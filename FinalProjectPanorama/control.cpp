@@ -32,6 +32,7 @@ enum MenuItem {
     MENU_PROCESS_CARVE_HORIZONTAL_SEAMS,
     MENU_PROCESS_INSERT_VERTICAL_SEAMS,
     MENU_PROCESS_INSERT_HORIZONTAL_SEAMS,
+    MENU_PROCESS_LOCAL_WARP,
     MENU_PROCESS_RECTANGLE,
 };
 
@@ -56,6 +57,7 @@ int make_menu ()
     glutAddMenuEntry("Carve horizontal seams..", MENU_PROCESS_CARVE_HORIZONTAL_SEAMS);
     glutAddMenuEntry("Insert vertical seams..", MENU_PROCESS_INSERT_VERTICAL_SEAMS);
     glutAddMenuEntry("Insert horizontal seams..", MENU_PROCESS_INSERT_HORIZONTAL_SEAMS);
+    glutAddMenuEntry("Local warp", MENU_PROCESS_LOCAL_WARP);
     glutAddMenuEntry("Rectangle", MENU_PROCESS_RECTANGLE);
     
     int main = glutCreateMenu(menu_func);
@@ -201,6 +203,11 @@ void process_func (int value)
             cin >> numSeams;
             cerr << "Inserting.." << endl;
             resultImage = ip_insert_seams(currentImage, ORIENTATION_HORIZONTAL, numSeams);
+            break;
+
+        case MENU_PROCESS_LOCAL_WARP:
+            cerr << "Locally warping.." << endl;
+            resultImage = ip_local_warp(currentImage);
             break;
             
         case MENU_PROCESS_RECTANGLE: {

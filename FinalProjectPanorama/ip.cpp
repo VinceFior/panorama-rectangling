@@ -13,7 +13,7 @@
 #include <math.h>
 #include <time.h>
 
-#define INFINITY         1e10
+#define INFT         1e8
 
 /*
  * Applies the given effect to each pixel in the given source image.
@@ -217,6 +217,38 @@ Image* ip_energy(Image* src)
 }
 
 /*
+ * Determines whether the given pixel is 'transparent'.
+ */
+bool ip_is_transparent(Pixel pixel) {
+    return (pixel.getColor(RED) == 1 && pixel.getColor(GREEN) == 1 && pixel.getColor(BLUE) == 1);
+}
+
+/*
+ * Determines whether the given pixel is part of the 'transparent' border.
+ */
+bool ip_is_border(Image* src, int x, int y) {
+    Pixel pixel = src->getPixel(x, y);
+    if (!ip_is_transparent(pixel)) {
+        return false;
+    }
+    
+    
+    1;return true; //TODO: BFS
+    // do a BFS to reach a border pixel
+    
+//    expandedPixels = set()
+//    fringe = util.Queue()
+//    fringe.push(startPos)
+//    while not fringe.isEmpty():
+//        offPixel = fringe.pop()
+//        if offPixel not in expandedPixels:
+//            expandedPixels.add(offPixel)
+//            for neighbor in getOffNeighbors(datum, offPixel):
+//                fringe.push(neighbor)
+//                return expandedPixels
+}
+
+/*
  * Computes the lowest-energy seam in the range [start, end] using forward energy and returns the
  * coordinates of its pixels. Start is top/left, end is bottom/right.
  */
@@ -250,14 +282,20 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
         for (int y = yStart; y <= yEnd; y++) {
             int tableY = y - yStart;
             for (int x = xStart; x <= xEnd; x++) {
-                if (y == 0) {
+                // don't cut a seam through the 'transparent' border
+                if (ip_is_border(src, x, y)) {
+                    energyTable[x][tableY] = INFT * 10;
+                    parentTable[x][tableY] = x;
+                    continue;
+                }
+                if (y == yStart) {
                     energyTable[x][tableY] = ip_get_energy(src, x, y);
                     parentTable[x][tableY] = -1; // a pixel in the top row has no parent
                 } else {
                     double energyOfPathFromTop = energyTable[x][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP);
                     // the energies of the paths to top left or top right depend on the neighbor existing
-                    double energyOfPathFromTopLeft = INFINITY;
-                    double energyOfPathFromTopRight = INFINITY;
+                    double energyOfPathFromTopLeft = INFT;
+                    double energyOfPathFromTopRight = INFT;
                     if (x > 0) {
                         energyOfPathFromTopLeft = energyTable[x - 1][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP_LEFT);
                     }
@@ -270,7 +308,7 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
                     if (minParentEnergy == energyOfPathFromTop) {
                         parentTable[x][tableY] = x;
                     } else if (minParentEnergy == energyOfPathFromTopLeft) {
-                        parentTable[x][tableY] = x - 1;
+                        parentTable[x][tableY] = max(x - 1, 0);
                     } else { // energyOfPathFromTopRight
                         parentTable[x][tableY] = x + 1;
                     }
@@ -281,14 +319,20 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
         for (int x = xStart; x <= xEnd; x++) {
             int tableX = x - xStart;
             for (int y = yStart; y <= yEnd; y++) {
-                if (x == 0) {
+                // don't cut a seam through the 'transparent' border
+                if (ip_is_border(src, x, y)) {
+                    energyTable[tableX][y] = INFT * 10;
+                    parentTable[tableX][y] = y;
+                    continue;
+                }
+                if (x == xStart) {
                     energyTable[tableX][y] = ip_get_energy(src, x, y);
                     parentTable[tableX][y] = -1; // a pixel in the leftmost row has no parent
                 } else {
                     double energyOfPathFromLeft = energyTable[tableX - 1][y] + ip_get_forward_energy(src, x, y, DIRECTION_LEFT);
                     // the energies of the paths to left top or left bottom depend on the neighbor existing
-                    double energyOfPathFromLeftTop = INFINITY;
-                    double energyOfPathFromLeftBottom = INFINITY;
+                    double energyOfPathFromLeftTop = INFT;
+                    double energyOfPathFromLeftBottom = INFT;
                     if (y > 0) {
                         energyOfPathFromLeftTop = energyTable[tableX - 1][y - 1] + ip_get_forward_energy(src, x, y, DIRECTION_LEFT_TOP);
                     }
@@ -301,7 +345,7 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
                     if (minParentEnergy == energyOfPathFromLeft) {
                         parentTable[tableX][y] = y;
                     } else if (minParentEnergy == energyOfPathFromLeftTop) {
-                        parentTable[tableX][y] = y - 1;
+                        parentTable[tableX][y] = max(y - 1, 0);
                     } else { // energyOfPathFromLeftBottom
                         parentTable[tableX][y] = y + 1;
                     }
@@ -313,7 +357,7 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
     
     int *seam = new int[range];
     // determine the coordinate on the bottom row with the lowest path energy
-    double minWeight = INFINITY;
+    double minWeight = INFT;
     double minWeightCoord = 0;
     if (orientation == ORIENTATION_VERTICAL) {
         for (int x = 0; x < srcWidth; x++) {
@@ -480,24 +524,39 @@ Image* ip_carve_seams(Image* src, SeamOrientation orientation, int numSeams)
 }
 
 /*
- * Returns a new image with the lowest-cost seam duplicated.
+ * Returns a new image with the lowest-cost seam duplicated in the given range, shifting over pixels.
  */
-Image* ip_insert_seam(Image* src, SeamOrientation orientation)
+Image* ip_insert_seam_in_range(Image* src, SeamOrientation orientation, int start, int end, bool shiftToEnd)
 {
-    int srcWidth = src->getWidth();
-    int srcHeight = src->getHeight();
+    int width = src->getWidth();
+    int height = src->getHeight();
     if (orientation == ORIENTATION_VERTICAL) {
-        int outputWidth = srcWidth + 1;
-        int outputHeight = srcHeight;
         // note: this step wastefully calls the underlying get_seam method twice
-        int *seam = ip_get_seam(src, orientation);
-        Image *outputImage = new Image(outputWidth, outputHeight);
-        for (int x = 0; x < outputWidth; x++) {
-            for (int y = 0; y < outputHeight; y++) {
-                if (x == seam[y]) {
+        int *seam = ip_get_seam_in_range(src, orientation, start, end);
+        Image *outputImage = new Image(width, height);
+        for (int x = 0; x < width; x++) {
+            // above range
+            for (int y = 0; y < start; y++) {
+                Pixel srcPixel = src->getPixel(x, y);
+                outputImage->setPixel(x, y, srcPixel);
+            }
+            // below range
+            for (int y = end + 1; y < height; y++) {
+                Pixel srcPixel = src->getPixel(x, y);
+                outputImage->setPixel(x, y, srcPixel);
+            }
+            // in range
+            for (int y = start; y <= end; y++) {
+                int seamY = y - start;
+                if (x == seam[seamY]) {
                     // average
-                    int srcX = x - 1;
-                    if (srcX - 1 >= 0 && srcX + 1 < srcWidth) {
+                    int srcX;
+                    if (shiftToEnd) {
+                        srcX = x - 1;
+                    } else {
+                        srcX = x + 1;
+                    }
+                    if (srcX - 1 >= 0 && srcX + 1 < width) {
                         Pixel leftPixel = src->getPixel(srcX - 1, y);
                         Pixel rightPixel = src->getPixel(srcX + 1, y);
                         Pixel averagePixel = Pixel();
@@ -508,38 +567,60 @@ Image* ip_insert_seam(Image* src, SeamOrientation orientation)
                     } else if (srcX - 1 >= 0) {
                         Pixel leftPixel = src->getPixel(srcX - 1, y);
                         outputImage->setPixel(x, y, leftPixel);
-                    } else if (srcX + 1 < outputWidth) {
+                    } else if (srcX + 1 < width) {
                         Pixel rightPixel = src->getPixel(srcX + 1, y);
                         outputImage->setPixel(x, y, rightPixel);
                     } else {
                         Pixel srcPixel = src->getPixel(srcX, y);
                         outputImage->setPixel(x, y, srcPixel);
                     }
-                } else if (x > seam[y]) {
-                    // shift
-                    int srcX = x - 1;
-                    Pixel srcPixel = src->getPixel(srcX, y);
-                    outputImage->setPixel(x, y, srcPixel);
                 } else {
-                    // do nothing
-                    Pixel srcPixel = src->getPixel(x, y);
-                    outputImage->setPixel(x, y, srcPixel);
+                    if (x > seam[seamY] && shiftToEnd) {
+                        // shift
+                        int srcX = x - 1;
+                        Pixel srcPixel = src->getPixel(srcX, y);
+                        outputImage->setPixel(x, y, srcPixel);
+                    } else if (x < seam[seamY] && !shiftToEnd) {
+                        // shift
+                        int srcX = x + 1;
+                        Pixel srcPixel = src->getPixel(srcX, y);
+                        outputImage->setPixel(x, y, srcPixel);
+                    } else {
+                        // do nothing
+                        Pixel srcPixel = src->getPixel(x, y);
+                        outputImage->setPixel(x, y, srcPixel);
+                    }
                 }
             }
         }
         return outputImage;
     } else if (orientation == ORIENTATION_HORIZONTAL) {
-        int outputWidth = srcWidth;
-        int outputHeight = srcHeight + 1;
         // note: this step wastefully calls the underlying get_seam method twice
-        int *seam = ip_get_seam(src, orientation);
-        Image *outputImage = new Image(outputWidth, outputHeight);
-        for (int x = 0; x < outputWidth; x++) {
-            for (int y = 0; y < outputHeight; y++) {
-                if (y == seam[x]) {
+        int *seam = ip_get_seam_in_range(src, orientation, start, end);
+        Image *outputImage = new Image(width, height);
+        for (int y = 0; y < height; y++) {
+            // left of range
+            for (int x = 0; x < start; x++) {
+                Pixel srcPixel = src->getPixel(x, y);
+                outputImage->setPixel(x, y, srcPixel);
+            }
+            // right of range
+            for (int x = end + 1; x < width; x++) {
+                Pixel srcPixel = src->getPixel(x, y);
+                outputImage->setPixel(x, y, srcPixel);
+            }
+            // in range
+            for (int x = start; x <= end; x++) {
+                int seamX = x - start;
+                if (y == seam[seamX]) {
                     // average
-                    int srcY = y - 1;
-                    if (srcY - 1 >= 0 && srcY + 1 < srcHeight) {
+                    int srcY;
+                    if (shiftToEnd) {
+                        srcY = y - 1;
+                    } else {
+                        srcY = y + 1;
+                    }
+                    if (srcY - 1 >= 0 && srcY + 1 < height) {
                         Pixel topPixel = src->getPixel(x, srcY - 1);
                         Pixel bottomPixel = src->getPixel(x, srcY + 1);
                         Pixel averagePixel = Pixel();
@@ -550,26 +631,48 @@ Image* ip_insert_seam(Image* src, SeamOrientation orientation)
                     } else if (srcY - 1 >= 0) {
                         Pixel topPixel = src->getPixel(x, srcY - 1);
                         outputImage->setPixel(x, y, topPixel);
-                    } else if (srcY + 1 < outputHeight) {
+                    } else if (srcY + 1 < height) {
                         Pixel bottomPixel = src->getPixel(x, srcY + 1);
                         outputImage->setPixel(x, y, bottomPixel);
                     } else {
                         Pixel srcPixel = src->getPixel(x, srcY);
                         outputImage->setPixel(x, y, srcPixel);
                     }
-                } else if (y > seam[x]) {
-                    // shift
-                    int srcY = y - 1;
-                    Pixel srcPixel = src->getPixel(x, srcY);
-                    outputImage->setPixel(x, y, srcPixel);
                 } else {
-                    // do nothing
-                    Pixel srcPixel = src->getPixel(x, y);
-                    outputImage->setPixel(x, y, srcPixel);
+                    if (y > seam[seamX] && shiftToEnd) {
+                        // shift
+                        int srcY = y - 1;
+                        Pixel srcPixel = src->getPixel(x, srcY);
+                        outputImage->setPixel(x, y, srcPixel);
+                    } else if (y < seam[seamX] && !shiftToEnd) {
+                        // shift
+                        int srcY = y + 1;
+                        Pixel srcPixel = src->getPixel(x, srcY);
+                        outputImage->setPixel(x, y, srcPixel);
+                    } else {
+                        // do nothing
+                        Pixel srcPixel = src->getPixel(x, y);
+                        outputImage->setPixel(x, y, srcPixel);
+                    }
                 }
             }
         }
         return outputImage;
+    } else {
+        // this case should never happen
+        return nullptr;
+    }
+}
+
+/*
+ * Returns a new image with the lowest-cost seam duplicated.
+ */
+Image* ip_insert_seam(Image* src, SeamOrientation orientation, bool shiftToEnd)
+{
+    if (orientation == ORIENTATION_VERTICAL) {
+        return ip_insert_seam_in_range(src, orientation, 0, src->getHeight() - 1, shiftToEnd);
+    } else if (orientation == ORIENTATION_HORIZONTAL) {
+        return ip_insert_seam_in_range(src, orientation, 0, src->getWidth() - 1, shiftToEnd);
     } else {
         // this case should never happen
         return nullptr;
@@ -584,7 +687,144 @@ Image* ip_insert_seams(Image* src, SeamOrientation orientation, int numSeams)
 {
     Image* resultImage = new Image(*src);
     for (int i = 0; i < numSeams; i++) {
-        resultImage = ip_insert_seam(resultImage, orientation);
+        resultImage = ip_insert_seam(resultImage, orientation, false);
+    }
+    return resultImage;
+}
+
+/*
+ * Returns the longest line of 'transparent' pixels along an edge of the image.
+ */
+vector<int> ip_get_longest_boundary(Image* src, BorderSide& whichSide)
+{
+    vector<int> boundary;
+    size_t maxBoundaryLength = 0;
+    int width = src->getWidth();
+    int height = src->getHeight();
+    
+    // top
+    bool isCountingBoundary = false;
+    vector<int> currentBoundary;
+    for (int x = 0; x < width; x++) {
+        Pixel leftPixel = src->getPixel(x, 0);
+        if (!ip_is_transparent(leftPixel) || (x == width - 1)) {
+            if (isCountingBoundary) {
+                if (currentBoundary.size() > maxBoundaryLength) {
+                    maxBoundaryLength = currentBoundary.size();
+                    boundary = currentBoundary;
+                    whichSide = BORDER_TOP;
+                }
+            }
+            isCountingBoundary = false;
+            currentBoundary.clear();
+            continue;
+        } else {
+            currentBoundary.push_back(x);
+            isCountingBoundary = true;
+        }
+    }
+    
+    // bottom
+    isCountingBoundary = false;
+    currentBoundary.clear();
+    for (int x = 0; x < width; x++) {
+        Pixel leftPixel = src->getPixel(x, height - 1);
+        if (!ip_is_transparent(leftPixel) || (x == width - 1)) {
+            if (isCountingBoundary) {
+                if (currentBoundary.size() > maxBoundaryLength) {
+                    maxBoundaryLength = currentBoundary.size();
+                    boundary = currentBoundary;
+                    whichSide = BORDER_BOTTOM;
+                }
+            }
+            isCountingBoundary = false;
+            currentBoundary.clear();
+            continue;
+        } else {
+            currentBoundary.push_back(x);
+            isCountingBoundary = true;
+        }
+    }
+    
+    // left
+    isCountingBoundary = false;
+    currentBoundary.clear();
+    for (int y = 0; y < height; y++) {
+        Pixel topPixel = src->getPixel(0, y);
+        if (!ip_is_transparent(topPixel) || (y == height - 1)) {
+            if (isCountingBoundary) {
+                if (currentBoundary.size() > maxBoundaryLength) {
+                    maxBoundaryLength = currentBoundary.size();
+                    boundary = currentBoundary;
+                    whichSide = BORDER_LEFT;
+                }
+            }
+            isCountingBoundary = false;
+            currentBoundary.clear();
+            continue;
+        } else {
+            currentBoundary.push_back(y);
+            isCountingBoundary = true;
+        }
+    }
+    
+    // right
+    isCountingBoundary = false;
+    currentBoundary.clear();
+    for (int y = 0; y < height; y++) {
+        Pixel topPixel = src->getPixel(width - 1, y);
+        if (!ip_is_transparent(topPixel) || (y == height - 1)) {
+            if (isCountingBoundary) {
+                if (currentBoundary.size() > maxBoundaryLength) {
+                    maxBoundaryLength = currentBoundary.size();
+                    boundary = currentBoundary;
+                    whichSide = BORDER_RIGHT;
+                }
+            }
+            isCountingBoundary = false;
+            currentBoundary.clear();
+            continue;
+        } else {
+            currentBoundary.push_back(y);
+            isCountingBoundary = true;
+        }
+    }
+    
+    return boundary;
+}
+
+/*
+ * Warps the given image with an irregular 'transparent' border to fill the rectangle.
+ * Note that the 'transparent' border must NOT have any boundary as long as its dimension.
+ */
+Image* ip_local_warp(Image* src)
+{
+    Image* resultImage = new Image(*src);
+    while (true) {
+        BorderSide whichSide;
+        vector<int> longestBoundary = ip_get_longest_boundary(resultImage, whichSide);
+        if (longestBoundary.size() == 0) {
+            return resultImage;
+        } else {
+            SeamOrientation orientation;
+            bool shiftToEnd;
+            if (whichSide == BORDER_TOP) {
+                orientation = ORIENTATION_HORIZONTAL;
+                shiftToEnd = false;
+            } else if (whichSide == BORDER_BOTTOM) {
+                orientation = ORIENTATION_HORIZONTAL;
+                shiftToEnd = true;
+            } else if (whichSide == BORDER_LEFT) {
+                orientation = ORIENTATION_VERTICAL;
+                shiftToEnd = false;
+            } else if (whichSide == BORDER_RIGHT) {
+                orientation = ORIENTATION_VERTICAL;
+                shiftToEnd = true;
+            }
+            int start = longestBoundary[0];
+            int end = longestBoundary[longestBoundary.size() - 1];
+            resultImage = ip_insert_seam_in_range(resultImage, orientation, start, end, shiftToEnd);
+        }
     }
     return resultImage;
 }
