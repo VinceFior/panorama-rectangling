@@ -250,23 +250,27 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
     if (orientation == ORIENTATION_HORIZONTAL) {
         src = ip_transpose(src, true);
     }
-    
     int srcWidth = src->getWidth();
-    int srcHeight = src->getHeight();
     int range = end - start + 1; // +1 because inclusive
-    int outputWidth;
-    int outputHeight;
+    int outputWidth = srcWidth;
+    int outputHeight = range;
     // starts and ends are all inclusive
     int xStart = 0;
-    int yStart = 0;
+    int yStart = start;
     int xEnd = srcWidth - 1;
-    int yEnd = srcHeight - 1;
-    outputWidth = srcWidth;
-    outputHeight = range;
-    yStart = start;
-    yEnd = end;
-    double energyTable [outputWidth][outputHeight]; // DP energy of pixel
-    int parentTable [outputWidth][outputHeight]; // where the previous pixel in the seam came from
+    int yEnd = end;
+    
+    // DP energy of pixel
+    double **energyTable = new double* [outputWidth];
+    for (int i = 0; i < outputWidth; i++) {
+        energyTable[i] = new double[outputHeight];
+    }
+    // where the previous pixel in the seam came from
+    double **parentTable = new double* [outputWidth];
+    for (int i = 0; i < outputWidth; i++) {
+        parentTable[i] = new double[outputHeight];
+    }
+    
     // fill out the energyTable and parentTable
     for (int y = yStart; y <= yEnd; y++) {
         int tableY = y - yStart;
