@@ -21,10 +21,7 @@ enum SeamOrientation {
 enum NeighborDirection {
     DIRECTION_TOP_LEFT,
     DIRECTION_TOP,
-    DIRECTION_TOP_RIGHT,
-    DIRECTION_LEFT_TOP,
-    DIRECTION_LEFT,
-    DIRECTION_LEFT_BOTTOM
+    DIRECTION_TOP_RIGHT
 };
 
 enum BorderSide {

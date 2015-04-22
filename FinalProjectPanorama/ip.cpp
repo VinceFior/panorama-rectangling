@@ -87,6 +87,33 @@ Image* ip_gray (Image* src)
 }
 
 /*
+ * Transposes the image between normal and 90 degrees CW and mirror (so top is top or left is top).
+ * The mirroring is to preserve +x => +y.
+ */
+Image* ip_transpose(Image* src, bool forward)
+{
+    int srcWidth = src->getWidth();
+    int srcHeight = src->getHeight();
+    Image* output = new Image (srcHeight, srcWidth);
+    if (forward) {
+        for (int x = 0; x < srcHeight; x++) {
+            for (int y = 0; y < srcWidth; y++) {
+                Pixel srcPixel = src->getPixel(y, srcHeight-1-(srcHeight - 1 - x));
+                output->setPixel(x, y, srcPixel);
+            }
+        }
+    } else {
+        for (int x = 0; x < srcHeight; x++) {
+            for (int y = 0; y < srcWidth; y++) {
+                Pixel srcPixel = src->getPixel(srcWidth-1-(srcWidth - 1 - y), x);
+                output->setPixel(x, y, srcPixel);
+            }
+        }
+    }
+    return output;
+}
+
+/*
  * Returns the energy function of pixel at the given coordinate in the given image,
  * defined as the sum of the change in intensity from the pixel's x-neighbor plus the change
  * in intensity from the pixel's y-neighbor (using x+1 and y+1 whenever possible, else x-1 and y-1).
@@ -117,11 +144,11 @@ double ip_get_energy(Image* src, int x, int y)
 
 /*
  * Returns the forward energy given a pixel and its neighbor that are being removed.
+ * This method only deals with vertical seams, since it expects horizontal images to be flipped.
  */
 double ip_get_forward_energy(Image* src, int x, int y, NeighborDirection direction)
 {
     int width = src->getWidth();
-    int height = src->getHeight();
     double energy = 0;
     if (direction == DIRECTION_TOP_LEFT) {
         if (x <= 0 || y <= 0) {
@@ -156,40 +183,6 @@ double ip_get_forward_energy(Image* src, int x, int y, NeighborDirection directi
             Pixel leftPixel = src->getPixel(x - 1, y);
             energy += fabs(ip_get_intensity(leftPixel) - ip_get_intensity(bottomRightPixel));
         }
-        return energy;
-    } else if (direction == DIRECTION_LEFT_TOP) {
-        if (x <= 0 || y <= 0) {
-            return energy;
-        }
-        Pixel topRightPixel = src->getPixel(x, y - 1);
-        // add left and bottom
-        Pixel leftPixel = src->getPixel(x - 1, y);
-        energy += fabs(ip_get_intensity(leftPixel) - ip_get_intensity(topRightPixel));
-        if (y + 1 < height) {
-            Pixel bottomPixel = src->getPixel(x, y + 1);
-            energy += fabs(ip_get_intensity(bottomPixel) - ip_get_intensity(topRightPixel));
-        }
-        return energy;
-    } else if (direction == DIRECTION_LEFT) {
-        // add top and bottom
-        if (y - 1 >= 0 && y + 1 < height) {
-            Pixel topPixel = src->getPixel(x, y - 1);
-            Pixel bottomPixel = src->getPixel(x, y + 1);
-            energy += fabs(ip_get_intensity(topPixel) - ip_get_intensity(bottomPixel));
-        }
-        return energy;
-    } else if (direction == DIRECTION_LEFT_BOTTOM) {
-        if (x <= 0 || y >= height - 1) {
-            return energy;
-        }
-        Pixel bottomRightPixel = src->getPixel(x, y + 1);
-        // add top and left
-        if (y - 1 >= 0) {
-            Pixel topPixel = src->getPixel(x, y - 1);
-            energy += fabs(ip_get_intensity(topPixel) - ip_get_intensity(bottomRightPixel));
-        }
-        Pixel leftPixel = src->getPixel(x - 1, y);
-        energy += fabs(ip_get_intensity(leftPixel) - ip_get_intensity(bottomRightPixel));
         return energy;
     } else {
         // this case shouldn't happen
@@ -254,6 +247,10 @@ bool ip_is_border(Image* src, int x, int y) {
  */
 int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, int end)
 {
+    if (orientation == ORIENTATION_HORIZONTAL) {
+        src = ip_transpose(src, true);
+    }
+    
     int srcWidth = src->getWidth();
     int srcHeight = src->getHeight();
     int range = end - start + 1; // +1 because inclusive
@@ -264,126 +261,64 @@ int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, in
     int yStart = 0;
     int xEnd = srcWidth - 1;
     int yEnd = srcHeight - 1;
-    if (orientation == ORIENTATION_VERTICAL) {
-        outputWidth = srcWidth;
-        outputHeight = range;
-        yStart = start;
-        yEnd = end;
-    } else if (orientation == ORIENTATION_HORIZONTAL) {
-        outputWidth = range;
-        outputHeight = srcHeight;
-        xStart = start;
-        xEnd = end;
-    }
+    outputWidth = srcWidth;
+    outputHeight = range;
+    yStart = start;
+    yEnd = end;
     double energyTable [outputWidth][outputHeight]; // DP energy of pixel
     int parentTable [outputWidth][outputHeight]; // where the previous pixel in the seam came from
     // fill out the energyTable and parentTable
-    if (orientation == ORIENTATION_VERTICAL) {
-        for (int y = yStart; y <= yEnd; y++) {
-            int tableY = y - yStart;
-            for (int x = xStart; x <= xEnd; x++) {
-                // don't cut a seam through the 'transparent' border
-                if (ip_is_border(src, x, y)) {
-                    energyTable[x][tableY] = INFT * 10;
-                    parentTable[x][tableY] = x;
-                    continue;
-                }
-                if (y == yStart) {
-                    energyTable[x][tableY] = ip_get_energy(src, x, y);
-                    parentTable[x][tableY] = -1; // a pixel in the top row has no parent
-                } else {
-                    double energyOfPathFromTop = energyTable[x][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP);
-                    // the energies of the paths to top left or top right depend on the neighbor existing
-                    double energyOfPathFromTopLeft = INFT;
-                    double energyOfPathFromTopRight = INFT;
-                    if (x > 0) {
-                        energyOfPathFromTopLeft = energyTable[x - 1][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP_LEFT);
-                    }
-                    if (x + 1 < srcWidth) {
-                        energyOfPathFromTopRight = energyTable[x + 1][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP_RIGHT);
-                    }
-                    double minParentEnergy = min(energyOfPathFromTop, min(energyOfPathFromTopLeft, energyOfPathFromTopRight));
-                    energyTable[x][tableY] = ip_get_energy(src, x, y) + minParentEnergy;
-                    
-                    if (minParentEnergy == energyOfPathFromTop) {
-                        parentTable[x][tableY] = x;
-                    } else if (minParentEnergy == energyOfPathFromTopLeft) {
-                        parentTable[x][tableY] = max(x - 1, 0);
-                    } else { // energyOfPathFromTopRight
-                        parentTable[x][tableY] = x + 1;
-                    }
-                }
-            }
-        }
-    } else if (orientation == ORIENTATION_HORIZONTAL) {
+    for (int y = yStart; y <= yEnd; y++) {
+        int tableY = y - yStart;
         for (int x = xStart; x <= xEnd; x++) {
-            int tableX = x - xStart;
-            for (int y = yStart; y <= yEnd; y++) {
-                // don't cut a seam through the 'transparent' border
-                if (ip_is_border(src, x, y)) {
-                    energyTable[tableX][y] = INFT * 10;
-                    parentTable[tableX][y] = y;
-                    continue;
+            // don't cut a seam through the 'transparent' border
+            if (ip_is_border(src, x, y)) {
+                energyTable[x][tableY] = INFT * 10;
+                parentTable[x][tableY] = x;
+                continue;
+            }
+            if (y == yStart) {
+                energyTable[x][tableY] = ip_get_energy(src, x, y);
+                parentTable[x][tableY] = -1; // a pixel in the top row has no parent
+            } else {
+                double energyOfPathFromTop = energyTable[x][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP);
+                // the energies of the paths to top left or top right depend on the neighbor existing
+                double energyOfPathFromTopLeft = INFT;
+                double energyOfPathFromTopRight = INFT;
+                if (x > 0) {
+                    energyOfPathFromTopLeft = energyTable[x - 1][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP_LEFT);
                 }
-                if (x == xStart) {
-                    energyTable[tableX][y] = ip_get_energy(src, x, y);
-                    parentTable[tableX][y] = -1; // a pixel in the leftmost row has no parent
-                } else {
-                    double energyOfPathFromLeft = energyTable[tableX - 1][y] + ip_get_forward_energy(src, x, y, DIRECTION_LEFT);
-                    // the energies of the paths to left top or left bottom depend on the neighbor existing
-                    double energyOfPathFromLeftTop = INFT;
-                    double energyOfPathFromLeftBottom = INFT;
-                    if (y > 0) {
-                        energyOfPathFromLeftTop = energyTable[tableX - 1][y - 1] + ip_get_forward_energy(src, x, y, DIRECTION_LEFT_TOP);
-                    }
-                    if (y + 1 < srcHeight) {
-                        energyOfPathFromLeftBottom = energyTable[tableX - 1][y + 1] + ip_get_forward_energy(src, x, y, DIRECTION_LEFT_BOTTOM);
-                    }
-                    double minParentEnergy = min(energyOfPathFromLeft, min(energyOfPathFromLeftTop, energyOfPathFromLeftBottom));
-                    energyTable[tableX][y] = ip_get_energy(src, x, y) + minParentEnergy;
-                    
-                    if (minParentEnergy == energyOfPathFromLeft) {
-                        parentTable[tableX][y] = y;
-                    } else if (minParentEnergy == energyOfPathFromLeftTop) {
-                        parentTable[tableX][y] = max(y - 1, 0);
-                    } else { // energyOfPathFromLeftBottom
-                        parentTable[tableX][y] = y + 1;
-                    }
+                if (x + 1 < srcWidth) {
+                    energyOfPathFromTopRight = energyTable[x + 1][tableY - 1] + ip_get_forward_energy(src, x, y, DIRECTION_TOP_RIGHT);
+                }
+                double minParentEnergy = min(energyOfPathFromTop, min(energyOfPathFromTopLeft, energyOfPathFromTopRight));
+                energyTable[x][tableY] = ip_get_energy(src, x, y) + minParentEnergy;
+                
+                if (minParentEnergy == energyOfPathFromTop) {
+                    parentTable[x][tableY] = x;
+                } else if (minParentEnergy == energyOfPathFromTopLeft) {
+                    parentTable[x][tableY] = max(x - 1, 0);
+                } else { // energyOfPathFromTopRight
+                    parentTable[x][tableY] = x + 1;
                 }
             }
         }
     }
-    
     
     int *seam = new int[range];
     // determine the coordinate on the bottom row with the lowest path energy
     double minWeight = INFT;
     double minWeightCoord = 0;
-    if (orientation == ORIENTATION_VERTICAL) {
-        for (int x = 0; x < srcWidth; x++) {
-            if (energyTable[x][range - 1] < minWeight) {
-                minWeight = energyTable[x][range - 1];
-                minWeightCoord = x;
-            }
-        }
-    } else if (orientation == ORIENTATION_HORIZONTAL) {
-        for (int y = 0; y < srcHeight; y++) {
-            if (energyTable[range - 1][y] < minWeight) {
-                minWeight = energyTable[range - 1][y];
-                minWeightCoord = y;
-            }
+    for (int x = 0; x < srcWidth; x++) {
+        if (energyTable[x][range - 1] < minWeight) {
+            minWeight = energyTable[x][range - 1];
+            minWeightCoord = x;
         }
     }
     seam[range - 1] = minWeightCoord;
     // now that we have the end of the seam determined, backtrack up the parents to find the rest
-    if (orientation == ORIENTATION_VERTICAL) {
-        for (int i = range - 1 - 1; i >= 0; i--) {
-            seam[i] = parentTable[seam[i + 1]][i + 1];
-        }
-    } else if (orientation == ORIENTATION_HORIZONTAL) {
-        for (int i = range - 1 - 1; i >= 0; i--) {
-            seam[i] = parentTable[i + 1][seam[i + 1]];
-        }
+    for (int i = range - 1 - 1; i >= 0; i--) {
+        seam[i] = parentTable[seam[i + 1]][i + 1];
     }
     return seam;
 }
@@ -408,38 +343,31 @@ int* ip_get_seam(Image* src, SeamOrientation orientation)
  */
 Image* ip_show_seam(Image* src, SeamOrientation orientation)
 {
-    int *seam = ip_get_seam(src, orientation);
+    if (orientation == ORIENTATION_HORIZONTAL) {
+        src = ip_transpose(src, true);
+    }
+    int *seam = ip_get_seam(src, ORIENTATION_VERTICAL);
     
     int width = src->getWidth();
     int height = src->getHeight();
     Image* output = new Image (width, height);
     Pixel redPixel = Pixel(1, 0, 0);
     
-    if (orientation == ORIENTATION_VERTICAL) {
-        for (int x = 0; x < width; x++) {
-            for (int y = 0; y < height; y++) {
-                Pixel srcPixel = src->getPixel(x, y);
-                if (x == seam[y]) {
-                    output->setPixel(x, y, redPixel);
-                } else {
-                    output->setPixel(x, y, srcPixel);
-                }
-            }
-        }
-    } else if (orientation == ORIENTATION_HORIZONTAL) {
+    for (int x = 0; x < width; x++) {
         for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                Pixel srcPixel = src->getPixel(x, y);
-                if (y == seam[x]) {
-                    output->setPixel(x, y, redPixel);
-                } else {
-                    output->setPixel(x, y, srcPixel);
-                }
+            Pixel srcPixel = src->getPixel(x, y);
+            if (x == seam[y]) {
+                output->setPixel(x, y, redPixel);
+            } else {
+                output->setPixel(x, y, srcPixel);
             }
         }
     }
-
-    return output;
+    if (orientation == ORIENTATION_HORIZONTAL) {
+        return ip_transpose(output, false);
+    } else {
+        return output;
+    }
 }
 
 /*
