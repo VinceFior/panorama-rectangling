@@ -36,6 +36,11 @@ struct Coordinate
     int y;
 };
 
+struct CoordinateDouble
+{
+    double x;
+    double y;
+};
 
 /*
  * struct to contain an entire pixel's data, up to three channels.  if

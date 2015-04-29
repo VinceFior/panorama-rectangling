@@ -181,9 +181,9 @@ double ip_get_forward_energy(Image* src, int x, int y, NeighborDirection directi
 }
 
 /*
- * Shows the energy of each pixel.
+ * Shows the seam carving energy of each pixel.
  */
-Image* ip_energy(Image* src)
+Image* ip_seam_energy(Image* src)
 {
     int width = src->getWidth();
     int height = src->getHeight();
@@ -745,20 +745,106 @@ Image* ip_local_warp(Image* src)
     return result;
 }
 
+/*
+ * Returns the boundary energy of the given mesh on the given image. The boundary energy is zero
+ * when all the edge vertices are at the appropriate edge of the srcImage (from its dimensions).
+ */
+double ip_energy_boundary(Image* srcImage, vector<vector<CoordinateDouble>> mesh)
+{
+    int width = srcImage->getWidth();
+    int height = srcImage->getHeight();
+    size_t numMeshX = mesh.size();
+    size_t numMeshY = mesh[0].size();
+    double energy = 0;
+    // top
+    for (int i = 0; i < numMeshX; i++) {
+        CoordinateDouble meshVertexCoord = mesh[i][0];
+        energy += pow(meshVertexCoord.y, 2);
+    }
+    // bottom
+    for (int i = 0; i < numMeshX; i++) {
+        CoordinateDouble meshVertexCoord = mesh[i][numMeshY-1];
+        energy += pow((height - 1) - meshVertexCoord.y, 2);
+    }
+    // left
+    for (int j = 0; j < numMeshY; j++) {
+        CoordinateDouble meshVertexCoord = mesh[0][j];
+        energy += pow(meshVertexCoord.x, 2);
+    }
+    // right
+    for (int j = 0; j < numMeshY; j++) {
+        CoordinateDouble meshVertexCoord = mesh[numMeshX-1][j];
+        energy += pow((width - 1) - meshVertexCoord.x, 2);
+    }
+    
+    return energy;
+}
+
+/*
+ * Draws the vertices of the given mesh on the given image.
+ */
+Image* ip_draw_vertices(Image* src, vector<vector<CoordinateDouble>> mesh)
+{
+    size_t numMeshX = mesh.size();
+    size_t numMeshY = mesh[0].size();
+    Image* result = new Image(*src);
+    for (int i = 0; i < numMeshX; i++) {
+        for (int j = 0; j < numMeshY; j++) {
+            CoordinateDouble meshVertexCoord = mesh[i][j];
+            Pixel greenPixel = Pixel(0, 1, 0);
+            result->setPixel(floor(meshVertexCoord.x), floor(meshVertexCoord.y), greenPixel);
+        }
+    }
+    return result;
+}
 
 /*
  * Fits the given src image to its rectangular boundaries, using white as transparent.
  * This is the main method of the project.
  */
-Image* ip_rectangle(Image* src)
+Image* ip_rectangle(Image* srcImage)
 {
-    return ip_transpose(src);
-    // local warp to get a rectangular displacement map
-    // make mesh on rectangular image, warp it backward (via its vertices through the displacement map)
-    // compute energy function with this mesh and the original image
-    // optimize energy function to get optimized mesh (on the original image)
-    // use optimized mesh to interpolate displacement of every pixel
-    //   the boundary constraint ensures the optimized mesh fits the original rectangle; fill in few blank pixels
-    // scale the final mesh and re-interpolate to avoid stretching
+    // First, use local warp to get a rectangular displacement map
+    vector<vector<Coordinate>> displacementMap = ip_local_warp_displacement(srcImage);
+    
+    // Next, make a mesh on the rectangular image..
+    int width = srcImage->getWidth();
+    int height = srcImage->getHeight();
+    int numMeshX = 20;
+    int numMeshY = 20;
+    double widthPerMesh = double(width-1) / (numMeshX - 1);
+    double heightPerMesh = double(height-1) / (numMeshY - 1);
+    vector<vector<CoordinateDouble>> mesh;
+    for (int x = 0; x < numMeshX; x++) {
+        vector<CoordinateDouble> meshRow;
+        for (int y = 0; y < numMeshY; y++) {
+            CoordinateDouble coord;
+            coord.x = x * widthPerMesh;
+            coord.y = y * heightPerMesh;
+            meshRow.push_back(coord);
+        }
+        mesh.push_back(meshRow);
+    }
+    // ..and warp the mesh backward to the original image
+    for (int i = 0; i < numMeshX; i++) {
+        for (int j = 0; j < numMeshY; j++) {
+            CoordinateDouble& meshVertexCoord = mesh[i][j];
+            Coordinate vertexDisplacement = displacementMap[floor(meshVertexCoord.x)][floor(meshVertexCoord.y)];
+            meshVertexCoord.x += vertexDisplacement.x;
+            meshVertexCoord.y += vertexDisplacement.y;
+
+        }
+    }
+    
+    // Compute energy function for this mesh
+    // to-do: shape energy, line energy
+    double boundaryEnergy = ip_energy_boundary(srcImage, mesh);
+
+    // Optimize energy function to get the optimized (eventually final) mesh
+    
+    // Use optimized mesh to interpolate displacement of every pixel; fill in few blank pixels
+    
+    // Scale the final mesh and re-interpolate to fix stretching
+    
     return nullptr;
 }

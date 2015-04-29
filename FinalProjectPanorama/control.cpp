@@ -145,7 +145,7 @@ void process_func (int value)
     
     switch (value) {
         case MENU_PROCESS_ENERGY:
-            resultImage = ip_energy(currentImage);
+            resultImage = ip_seam_energy(currentImage);
             break;
             
         case MENU_PROCESS_GRAY:
@@ -265,6 +265,11 @@ void keyboard_func (unsigned char key, int x, int y)
         case 'I':
         case 'i':
             menu_func(MENU_FILE_OPEN_QUICK);
+            break;
+        
+        case 'E':
+        case 'e':
+            menu_func(MENU_PROCESS_RECTANGLE);
             break;
             
         case 'H':
