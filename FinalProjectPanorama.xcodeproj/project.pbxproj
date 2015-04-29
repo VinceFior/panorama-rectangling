@@ -15,6 +15,7 @@
 		BF6186AE1ADDBB07008FFD32 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BF6186AD1ADDBB07008FFD32 /* Cocoa.framework */; };
 		BF6186B31AE5CBAD008FFD32 /* ip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BF6186B11AE5CBAD008FFD32 /* ip.cpp */; };
 		BF6186B61AF0B4AC008FFD32 /* utils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BF6186B41AF0B4AC008FFD32 /* utils.cpp */; };
+		BF6186BC1AF19286008FFD32 /* lsd.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BF6186BA1AF19286008FFD32 /* lsd.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -45,6 +46,8 @@
 		BF6186B21AE5CBAD008FFD32 /* ip.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ip.h; sourceTree = "<group>"; };
 		BF6186B41AF0B4AC008FFD32 /* utils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = utils.cpp; sourceTree = "<group>"; };
 		BF6186B51AF0B4AC008FFD32 /* utils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = "<group>"; };
+		BF6186BA1AF19286008FFD32 /* lsd.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = lsd.cpp; sourceTree = "<group>"; };
+		BF6186BB1AF19286008FFD32 /* lsd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = lsd.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +97,8 @@
 				BF6186B11AE5CBAD008FFD32 /* ip.cpp */,
 				BF6186B51AF0B4AC008FFD32 /* utils.h */,
 				BF6186B41AF0B4AC008FFD32 /* utils.cpp */,
+				BF6186BB1AF19286008FFD32 /* lsd.h */,
+				BF6186BA1AF19286008FFD32 /* lsd.cpp */,
 			);
 			path = FinalProjectPanorama;
 			sourceTree = "<group>";
@@ -157,6 +162,7 @@
 				BF6186B31AE5CBAD008FFD32 /* ip.cpp in Sources */,
 				BF6186B61AF0B4AC008FFD32 /* utils.cpp in Sources */,
 				BF6186A81ADDB782008FFD32 /* control.cpp in Sources */,
+				BF6186BC1AF19286008FFD32 /* lsd.cpp in Sources */,
 				BF61869B1ADDB4DE008FFD32 /* main.cpp in Sources */,
 				BF6186A31ADDB589008FFD32 /* Image.cpp in Sources */,
 			);

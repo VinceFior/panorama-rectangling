@@ -13,6 +13,7 @@
 #include <math.h>
 #include <time.h>
 #include "utils.h"
+#include "lsd.h"
 
 #define INFT         1e8
 
@@ -1027,6 +1028,32 @@ double ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> inputMes
 }
 
 /*
+ * Converts the given Image to a PGM image, a C-style array of doubles (to interface with LSD).
+ */
+double* ip_image_to_array(Image* srcImage) {
+    int x, y;
+    int X = srcImage->getWidth();  // x image size
+    int Y = srcImage->getHeight();  // y image size
+    
+    double* imageArray = new double[X * Y];
+    
+    // the PGM image is all gray, where 0=black and 255=white
+    int whiteValue = 255;
+    
+    for (x = 0; x < X; x++) {
+        for (y = 0; y < Y; y++) {
+            Pixel srcPixel = srcImage->getPixel(x, y);
+            Pixel grayPixel = ip_gray_pixel(srcPixel, nullptr);
+            double pixelGrayness = grayPixel.getColor(RED);
+            int doubleGrayness = pixelGrayness * whiteValue;
+            imageArray[x + y * X] = doubleGrayness;
+        }
+    }
+    
+    return imageArray;
+}
+
+/*
  * Returns the total energy of the meshes on the image with the given angle theta.
  */
 double ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> inputMesh,
@@ -1072,6 +1099,44 @@ Image* ip_draw_vertices(Image* src, vector<vector<CoordinateDouble>> mesh)
  */
 Image* ip_rectangle(Image* srcImage)
 {
+    
+    
+    
+    double* imageArray = ip_image_to_array(srcImage);
+    
+    // call LSD
+    int numLines;
+    int w = srcImage->getWidth();
+    int h = srcImage->getHeight();
+    double* lineSegments = lsd(&numLines, imageArray, w, h);
+    
+    // show line segments
+    Image *lineImage = new Image(*srcImage);
+//    cerr << "Found " << numLines << " line segments." << endl;
+    for (int i = 0; i < numLines; i++) {
+        double x1 = lineSegments[7*i + 0];
+        double y1 = lineSegments[7*i + 1];
+        double x2 = lineSegments[7*i + 2];
+        double y2 = lineSegments[7*i + 3];
+        Pixel greenPixel = Pixel(0, 1, 0);
+        lineImage->setPixel(clamp(floor(x1), 0, w - 1), clamp(floor(y1), 0, h - 1), greenPixel);
+        lineImage->setPixel(clamp(floor(x2), 0, w - 1), clamp(floor(y2), 0, h - 1), greenPixel);
+//        for (int j = 0; j < 7; j++) {
+//            printf("%f ",lineSegments[7*i+j]);
+//        }
+//        printf("\n");
+    }
+    return lineImage;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     // === Local warp to get original mesh ===
     
     // First, use local warp to get a rectangular displacement map
