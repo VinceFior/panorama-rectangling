@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include "utils.h"
 
 #define INFT         1e8
 
@@ -746,37 +747,304 @@ Image* ip_local_warp(Image* src)
 }
 
 /*
+ * Performs matrix multiplication. Input vectors must be row-major order (m1[y][x]).
+ */
+vector<vector<double>> matmul(vector<vector<double>> m1, vector<vector<double>> m2)
+{
+    vector<vector<double>> result;
+    for (int i = 0; i < m1.size(); i++) {
+        vector<double> row;
+        for (int j = 0; j < m2[0].size(); j++) {
+            double val = 0;
+            for (int k = 0; k < m1[0].size(); k++) {
+                val += m1[i][k] * m2[k][j];
+            }
+            row.push_back(val);
+        }
+        result.push_back(row);
+    }
+    return result;
+}
+
+/*
+ * Transposes the given matrix.
+ */
+vector<vector<double>> mattrans(vector<vector<double>> m)
+{
+    vector<vector<double>> t;
+    for (int j = 0; j < m[0].size(); j++) {
+        vector<double> row;
+        for (int i = 0; i < m.size(); i++) {
+            row.push_back(m[i][j]);
+        }
+        t.push_back(row);
+    }
+    return t;
+}
+
+/*
+ * Subtracts the second matrix from the first.
+ */
+vector<vector<double>> matsub(vector<vector<double>> m1, vector<vector<double>> m2)
+{
+    vector<vector<double>> dif;
+    for (int i = 0; i < m1.size(); i++) {
+        vector<double> row;
+        for (int j = 0; j < m1[0].size(); j++) {
+            row.push_back(m1[i][j] - m2[i][j]);
+        }
+        dif.push_back(row);
+    }
+    return dif;
+}
+
+/*
+ * Returns an identity matrix of the given size.
+ */
+vector<vector<double>> matiden(int order)
+{
+    vector<vector<double>> iden;
+    for (int i = 0; i < order; i++) {
+        vector<double> row;
+        for (int j = 0; j < order; j++) {
+            if (i == j) {
+                row.push_back(1);
+            } else {
+                row.push_back(0);
+            }
+        }
+        iden.push_back(row);
+    }
+    return iden;
+}
+
+/*
+ * Calculates the magnitude of the given x by 1 matrix (a vector, in matrix speak).
+ */
+double matmag(vector<vector<double>> m)
+{
+    double mag = 0;
+    for (int i = 0; i < m.size(); i++) {
+        mag += pow(m[i][0], 2);
+    }
+    mag = sqrt(mag);
+    return mag;
+}
+
+/*
+ * Calculates the shape energy for the given set of meshes (input mesh and output mesh).
+ */
+double ip_energy_shape(vector<vector<CoordinateDouble>> inputMesh,
+                       vector<vector<CoordinateDouble>> outputMesh)
+{
+    size_t numMeshX = inputMesh.size();
+    size_t numMeshY = inputMesh[0].size();
+    double energy = 0;
+    size_t numberOfQuads = (numMeshX - 1) * (numMeshY - 1);
+    
+    // iterate through each quad; each quad is defined by its upper-left (small y, small x) corner
+    for (int i = 0; i < numMeshX - 1; i++) {
+        for (int j = 0; j < numMeshY - 1; j++) {
+            
+            // 8x4 matrix aq = [[x0, -y0, 1, 0], [y0, x0, 0, 1], ..., [x3, -y3, 1, 0], [y3, x3, 0, 1]] of the input quad
+            vector<vector<double>> aq;
+            
+            CoordinateDouble v0in = inputMesh[i][j]; // upper left
+            
+            vector<double> row0;
+            row0.push_back(v0in.x);
+            row0.push_back(-v0in.y);
+            row0.push_back(1);
+            row0.push_back(0);
+            aq.push_back(row0);
+            
+            vector<double> row1;
+            row1.push_back(v0in.y);
+            row1.push_back(v0in.x);
+            row1.push_back(0);
+            row1.push_back(1);
+            aq.push_back(row1);
+            
+            CoordinateDouble v1in = inputMesh[i+1][j]; // upper right
+            
+            vector<double> row2;
+            row2.push_back(v1in.x);
+            row2.push_back(-v1in.y);
+            row2.push_back(1);
+            row2.push_back(0);
+            aq.push_back(row2);
+            
+            vector<double> row3;
+            row3.push_back(v1in.y);
+            row3.push_back(v1in.x);
+            row3.push_back(0);
+            row3.push_back(1);
+            aq.push_back(row3);
+            
+            CoordinateDouble v2in = inputMesh[i][j+1]; // lower left
+            
+            vector<double> row4;
+            row4.push_back(v2in.x);
+            row4.push_back(-v2in.y);
+            row4.push_back(1);
+            row4.push_back(0);
+            aq.push_back(row4);
+            
+            vector<double> row5;
+            row5.push_back(v2in.y);
+            row5.push_back(v2in.x);
+            row5.push_back(0);
+            row5.push_back(1);
+            aq.push_back(row5);
+            
+            CoordinateDouble v3in = inputMesh[i+1][j+1]; // lower right
+            
+            vector<double> row6;
+            row6.push_back(v3in.x);
+            row6.push_back(-v3in.y);
+            row6.push_back(1);
+            row6.push_back(0);
+            aq.push_back(row6);
+            
+            vector<double> row7;
+            row7.push_back(v3in.y);
+            row7.push_back(v3in.x);
+            row7.push_back(0);
+            row7.push_back(1);
+            aq.push_back(row7);
+            // end aq
+            
+            
+            // 8x1 vector vq = [x0, y0, x1, y1, x2, y2, x3, y3], the four vertices of the output quad
+            vector<vector<double>> vq;
+            
+            CoordinateDouble v0out = outputMesh[i][j]; // upper left
+            
+            vector<double> vrow0;
+            vrow0.push_back(v0out.x);
+            vq.push_back(vrow0);
+            
+            vector<double> vrow1;
+            vrow1.push_back(v0out.y);
+            vq.push_back(vrow1);
+            
+            CoordinateDouble v1out = outputMesh[i+1][j]; // upper right
+            
+            vector<double> vrow2;
+            vrow2.push_back(v1out.x);
+            vq.push_back(vrow2);
+            
+            vector<double> vrow3;
+            vrow3.push_back(v1out.y);
+            vq.push_back(vrow3);
+            
+            CoordinateDouble v2out = outputMesh[i][j+1]; // lower left
+            
+            vector<double> vrow4;
+            vrow4.push_back(v2out.x);
+            vq.push_back(vrow4);
+            
+            vector<double> vrow5;
+            vrow5.push_back(v2out.y);
+            vq.push_back(vrow5);
+            
+            CoordinateDouble v3out = outputMesh[i+1][j+1]; // lower right
+
+            vector<double> vrow6;
+            vrow6.push_back(v3out.x);
+            vq.push_back(vrow6);
+            
+            vector<double> vrow7;
+            vrow7.push_back(v3out.y);
+            vq.push_back(vrow7);
+            // end vq
+            
+            
+            // add ((aq*(aq^T*aq)^(-1)*aq^T-I)*vq)^2
+            vector<vector<double>> aqt = mattrans(aq);
+            vector<vector<double>> aqtXaq = matmul(aqt, aq);
+            vector<vector<double>> inv = matinv(aqtXaq);
+            vector<vector<double>> prdr = matmul(inv, aqt);
+            vector<vector<double>> prdl = matmul(aq, prdr);
+            vector<vector<double>> iden = matiden(8);
+            vector<vector<double>> dif = matsub(prdl, iden);
+            vector<vector<double>> term = matmul(dif, vq);
+            double mag = matmag(term);
+            double magSqrd = pow(mag, 2);
+            energy += magSqrd;
+        }
+    }
+    
+    // normalize
+    energy = energy / numberOfQuads;
+    
+    return energy;
+}
+
+/*
  * Returns the boundary energy of the given mesh on the given image. The boundary energy is zero
  * when all the edge vertices are at the appropriate edge of the srcImage (from its dimensions).
  */
-double ip_energy_boundary(Image* srcImage, vector<vector<CoordinateDouble>> mesh)
+double ip_energy_boundary(Image* srcImage, vector<vector<CoordinateDouble>> outputMesh)
 {
     int width = srcImage->getWidth();
     int height = srcImage->getHeight();
-    size_t numMeshX = mesh.size();
-    size_t numMeshY = mesh[0].size();
+    size_t numMeshX = outputMesh.size();
+    size_t numMeshY = outputMesh[0].size();
     double energy = 0;
     // top
     for (int i = 0; i < numMeshX; i++) {
-        CoordinateDouble meshVertexCoord = mesh[i][0];
+        CoordinateDouble meshVertexCoord = outputMesh[i][0];
         energy += pow(meshVertexCoord.y, 2);
     }
     // bottom
     for (int i = 0; i < numMeshX; i++) {
-        CoordinateDouble meshVertexCoord = mesh[i][numMeshY-1];
+        CoordinateDouble meshVertexCoord = outputMesh[i][numMeshY-1];
         energy += pow((height - 1) - meshVertexCoord.y, 2);
     }
     // left
     for (int j = 0; j < numMeshY; j++) {
-        CoordinateDouble meshVertexCoord = mesh[0][j];
+        CoordinateDouble meshVertexCoord = outputMesh[0][j];
         energy += pow(meshVertexCoord.x, 2);
     }
     // right
     for (int j = 0; j < numMeshY; j++) {
-        CoordinateDouble meshVertexCoord = mesh[numMeshX-1][j];
+        CoordinateDouble meshVertexCoord = outputMesh[numMeshX-1][j];
         energy += pow((width - 1) - meshVertexCoord.x, 2);
     }
     
+    return energy;
+}
+
+/*
+ * Returns the line energy of the meshes on the image with the given angle theta.
+ */
+double ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> inputMesh,
+                      vector<vector<CoordinateDouble>> outputMesh, double theta)
+{
+    1; // TO-DO: implement this method
+    return 0;
+}
+
+/*
+ * Returns the total energy of the meshes on the image with the given angle theta.
+ */
+double ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> inputMesh,
+                      vector<vector<CoordinateDouble>> outputMesh, double theta)
+{
+    double energy = 0;
+    // Add shape energy
+    double shapeEnergy = ip_energy_shape(inputMesh, outputMesh);
+    double esWeight = 1;
+    energy += esWeight * shapeEnergy;
+    // Add weighted line energy
+    double elWeight = 100;
+    double lineEnergy = ip_energy_line(srcImage, inputMesh, outputMesh, theta);
+    energy += elWeight * lineEnergy;
+    // Add weighted boundary energy
+    double boundaryEnergy = ip_energy_boundary(srcImage, outputMesh);
+    double ebWeight = INFT;
+    energy += ebWeight * boundaryEnergy;
     return energy;
 }
 
@@ -804,6 +1072,8 @@ Image* ip_draw_vertices(Image* src, vector<vector<CoordinateDouble>> mesh)
  */
 Image* ip_rectangle(Image* srcImage)
 {
+    // === Local warp to get original mesh ===
+    
     // First, use local warp to get a rectangular displacement map
     vector<vector<Coordinate>> displacementMap = ip_local_warp_displacement(srcImage);
     
@@ -836,11 +1106,25 @@ Image* ip_rectangle(Image* srcImage)
         }
     }
     
+    // === End local warp to get original mesh ===
+    
+    
+    // === Optimize mesh ===
+    
     // Compute energy function for this mesh
-    // to-do: shape energy, line energy
-    double boundaryEnergy = ip_energy_boundary(srcImage, mesh);
-
+    vector<vector<CoordinateDouble>> inputMesh = mesh;
+    // TO-DO: Something with this mesh
+    vector<vector<CoordinateDouble>> outputMesh = mesh;
+    // TO-DO: Something with this theta
+    double theta = 0;
+    double energy = ip_energy_total(srcImage, inputMesh, outputMesh, theta);
+    
+    cerr << "Energy: " << energy << endl;
+    
     // Optimize energy function to get the optimized (eventually final) mesh
+    
+    // === End optimize mesh ===
+    
     
     // Use optimized mesh to interpolate displacement of every pixel; fill in few blank pixels
     
