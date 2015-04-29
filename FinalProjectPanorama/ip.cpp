@@ -87,27 +87,17 @@ Image* ip_gray (Image* src)
 }
 
 /*
- * Transposes the image between normal and 90 degrees CW and mirror (so top is top or left is top).
- * The mirroring is to preserve +x => +y.
+ * Transposes the image between x and y (replaces x with y and vice-versa).
  */
-Image* ip_transpose(Image* src, bool forward)
+Image* ip_transpose(Image* src)
 {
     int srcWidth = src->getWidth();
     int srcHeight = src->getHeight();
     Image* output = new Image (srcHeight, srcWidth);
-    if (forward) {
-        for (int x = 0; x < srcHeight; x++) {
-            for (int y = 0; y < srcWidth; y++) {
-                Pixel srcPixel = src->getPixel(y, srcHeight-1-(srcHeight - 1 - x));
-                output->setPixel(x, y, srcPixel);
-            }
-        }
-    } else {
-        for (int x = 0; x < srcHeight; x++) {
-            for (int y = 0; y < srcWidth; y++) {
-                Pixel srcPixel = src->getPixel(srcWidth-1-(srcWidth - 1 - y), x);
-                output->setPixel(x, y, srcPixel);
-            }
+    for (int x = 0; x < srcHeight; x++) {
+        for (int y = 0; y < srcWidth; y++) {
+            Pixel srcPixel = src->getPixel(y, x);
+            output->setPixel(x, y, srcPixel);
         }
     }
     return output;
@@ -248,7 +238,7 @@ bool ip_is_border(Image* src, int x, int y) {
 int* ip_get_seam_in_range(Image* src, SeamOrientation orientation, int start, int end)
 {
     if (orientation == ORIENTATION_HORIZONTAL) {
-        src = ip_transpose(src, true);
+        src = ip_transpose(src);
     }
     int srcWidth = src->getWidth();
     int range = end - start + 1; // +1 because inclusive
@@ -348,7 +338,7 @@ int* ip_get_seam(Image* src, SeamOrientation orientation)
 Image* ip_show_seam(Image* src, SeamOrientation orientation)
 {
     if (orientation == ORIENTATION_HORIZONTAL) {
-        src = ip_transpose(src, true);
+        src = ip_transpose(src);
     }
     int *seam = ip_get_seam(src, ORIENTATION_VERTICAL);
     
@@ -368,7 +358,7 @@ Image* ip_show_seam(Image* src, SeamOrientation orientation)
         }
     }
     if (orientation == ORIENTATION_HORIZONTAL) {
-        return ip_transpose(output, false);
+        return ip_transpose(output);
     } else {
         return output;
     }
@@ -449,16 +439,15 @@ Image* ip_carve_seams(Image* src, SeamOrientation orientation, int numSeams)
 /*
  * Returns a new image with the lowest-cost seam duplicated in the given range, shifting over pixels.
  */
-Image* ip_insert_seam_in_range(Image* src, SeamOrientation orientation, int start, int end, bool shiftToEnd)
+Image* ip_insert_seam_in_range(Image* src, int* seam, SeamOrientation orientation, int start, int end, bool shiftToEnd)
 {
+    // this method only works with vertical seams, so we transpose horizontal images
     if (orientation == ORIENTATION_HORIZONTAL) {
-        src = ip_transpose(src, true);
+        src = ip_transpose(src);
     }
     int width = src->getWidth();
     int height = src->getHeight();
     
-    // note: this step wastefully calls the underlying get_seam method twice
-    int *seam = ip_get_seam_in_range(src, ORIENTATION_VERTICAL, start, end);
     Image *outputImage = new Image(width, height);
     for (int x = 0; x < width; x++) {
         // above range
@@ -474,15 +463,13 @@ Image* ip_insert_seam_in_range(Image* src, SeamOrientation orientation, int star
         // in range
         for (int y = start; y <= end; y++) {
             int seamY = y - start;
-            if (x >= seam[seamY] && shiftToEnd) {
+            if (x > seam[seamY] && shiftToEnd) {
                 // shift
-                int srcX = x - 1;
-                Pixel srcPixel = src->getPixel(srcX, y);
+                Pixel srcPixel = src->getPixel(x - 1, y);
                 outputImage->setPixel(x, y, srcPixel);
-            } else if (x <= seam[seamY] && !shiftToEnd) {
+            } else if (x < seam[seamY] && !shiftToEnd) {
                 // shift
-                int srcX = x + 1;
-                Pixel srcPixel = src->getPixel(srcX, y);
+                Pixel srcPixel = src->getPixel(x + 1, y);
                 outputImage->setPixel(x, y, srcPixel);
             } else {
                 // do nothing
@@ -492,7 +479,7 @@ Image* ip_insert_seam_in_range(Image* src, SeamOrientation orientation, int star
         }
     }
     if (orientation == ORIENTATION_HORIZONTAL) {
-        outputImage = ip_transpose(outputImage, false);
+        outputImage = ip_transpose(outputImage);
     }
     return outputImage;
 }
@@ -503,9 +490,11 @@ Image* ip_insert_seam_in_range(Image* src, SeamOrientation orientation, int star
 Image* ip_insert_seam(Image* src, SeamOrientation orientation, bool shiftToEnd)
 {
     if (orientation == ORIENTATION_VERTICAL) {
-        return ip_insert_seam_in_range(src, orientation, 0, src->getHeight() - 1, shiftToEnd);
+        int* seam = ip_get_seam_in_range(src, orientation, 0, src->getHeight() - 1);
+        return ip_insert_seam_in_range(src, seam, orientation, 0, src->getHeight() - 1, shiftToEnd);
     } else if (orientation == ORIENTATION_HORIZONTAL) {
-        return ip_insert_seam_in_range(src, orientation, 0, src->getWidth() - 1, shiftToEnd);
+        int* seam = ip_get_seam_in_range(src, orientation, 0, src->getWidth() - 1);
+        return ip_insert_seam_in_range(src, seam, orientation, 0, src->getWidth() - 1, shiftToEnd);
     } else {
         // this case should never happen
         return nullptr;
@@ -627,17 +616,43 @@ vector<int> ip_get_longest_boundary(Image* src, BorderSide& whichSide)
 }
 
 /*
- * Warps the given image with an irregular 'transparent' border to fill the rectangle.
- * Note that the 'transparent' border must NOT have any boundary as long as its dimension.
+ * Returns a displacement map to warp the given image with an irregular 'transparent' border to fill
+ * its rectangle.
+ * Note that the 'transparent' border must NOT have any boundary as long as its dimension (i.e.,
+ * no excessive whitespace).
  */
-Image* ip_local_warp(Image* src)
+vector<vector<Coordinate>> ip_local_warp_displacement(Image* src)
 {
+    int srcWidth = src->getWidth();
+    int srcHeight = src->getHeight();
+    vector<vector<Coordinate>> displacementMap;
+    for (int x = 0; x < srcWidth; x++) {
+        vector<Coordinate> displacementRow;
+        for (int y = 0; y < srcHeight; y++) {
+            Coordinate coord;
+            coord.x = 0;
+            coord.y = 0;
+            displacementRow.push_back(coord);
+        }
+        displacementMap.push_back(displacementRow);
+    }
+    vector<vector<Coordinate>> finalDisplacementMap;
+    for (int x = 0; x < srcWidth; x++) {
+        vector<Coordinate> displacementRow;
+        for (int y = 0; y < srcHeight; y++) {
+            Coordinate coord;
+            coord.x = 0;
+            coord.y = 0;
+            displacementRow.push_back(coord);
+        }
+        finalDisplacementMap.push_back(displacementRow);
+    }
     Image* resultImage = new Image(*src);
     while (true) {
         BorderSide whichSide;
         vector<int> longestBoundary = ip_get_longest_boundary(resultImage, whichSide);
         if (longestBoundary.size() == 0) {
-            return resultImage;
+            return displacementMap;
         } else {
             SeamOrientation orientation;
             bool shiftToEnd;
@@ -653,14 +668,83 @@ Image* ip_local_warp(Image* src)
             } else if (whichSide == BORDER_RIGHT) {
                 orientation = ORIENTATION_VERTICAL;
                 shiftToEnd = true;
+            } else {
+                // default case, should never happen
+                orientation = ORIENTATION_VERTICAL;
+                shiftToEnd = true;
             }
             int start = longestBoundary[0];
             int end = longestBoundary[longestBoundary.size() - 1];
-            resultImage = ip_insert_seam_in_range(resultImage, orientation, start, end, shiftToEnd);
+            
+            int* seam = ip_get_seam_in_range(resultImage, orientation, start, end);
+            resultImage = ip_insert_seam_in_range(resultImage, seam, orientation, start, end, shiftToEnd);
+            
+            // update displacement map based on tmp displacement map
+            for (int x = 0; x < srcWidth; x++) {
+                for (int y = 0; y < srcHeight; y++) {
+                    // compute displacement relative to previous image
+                    Coordinate mostRecentDisplacement;
+                    mostRecentDisplacement.x = 0;
+                    mostRecentDisplacement.y = 0;
+                    if (orientation == ORIENTATION_VERTICAL && y >= start && y <= end) {
+                        int seamY = y - start;
+                        if (x > seam[seamY] && shiftToEnd) {
+                            mostRecentDisplacement.x = -1;
+                        } else if (x < seam[seamY] && !shiftToEnd) {
+                            mostRecentDisplacement.x = 1;
+                        }
+                    } else if (orientation == ORIENTATION_HORIZONTAL && x >= start && x <= end) {
+                        int seamX = x - start;
+                        if (y > seam[seamX] && shiftToEnd) {
+                            mostRecentDisplacement.y = -1;
+                        } else if (y < seam[seamX] && !shiftToEnd) {
+                            mostRecentDisplacement.y = 1;
+                        }
+                    }
+                    // find the pixel in displacementMap that tmp points to; find the pixel that that pixel points to; point to it
+                    Coordinate &finalDisplacement = finalDisplacementMap[x][y];
+                    int mostRecentlyDisplacedX = x + mostRecentDisplacement.x;
+                    int mostRecentlyDisplacedY = y + mostRecentDisplacement.y;
+                    Coordinate displacementOfTarget = displacementMap[mostRecentlyDisplacedX][mostRecentlyDisplacedY];
+                    int xInOriginalImage = mostRecentlyDisplacedX + displacementOfTarget.x;
+                    int yInOriginalImage = mostRecentlyDisplacedY + displacementOfTarget.y;
+                    finalDisplacement.x = xInOriginalImage - x;
+                    finalDisplacement.y = yInOriginalImage - y;
+                }
+            }
+            // update finalDisplacementMap
+            for (int x = 0; x < srcWidth; x++) {
+                for (int y = 0; y < srcHeight; y++) {
+                    Coordinate &displacement = displacementMap[x][y];
+                    Coordinate finalDisplacement = finalDisplacementMap[x][y];
+                    displacement.x = finalDisplacement.x;
+                    displacement.y = finalDisplacement.y;
+                }
+            }
+            
         }
     }
-    return resultImage;
+    return displacementMap;
 }
+
+/*
+ * Warps the given image with an irregular 'transparent' border to fill the rectangle.
+ * Note that the 'transparent' border must NOT have any boundary as long as its dimension.
+ */
+Image* ip_local_warp(Image* src)
+{
+    vector<vector<Coordinate>> displacementMap = ip_local_warp_displacement(src);
+    Image* result = new Image(*src);
+    for (int x = 0; x < src->getWidth(); x++) {
+        for (int y = 0; y < src->getHeight(); y++) {
+            Coordinate displacement = displacementMap[x][y];
+            Pixel srcPixel = src->getPixel(x + displacement.x, y + displacement.y);
+            result->setPixel(x, y, srcPixel);
+        }
+    }
+    return result;
+}
+
 
 /*
  * Fits the given src image to its rectangular boundaries, using white as transparent.
@@ -668,23 +752,13 @@ Image* ip_local_warp(Image* src)
  */
 Image* ip_rectangle(Image* src)
 {
-    1; // Currently, this method just replaces all white pixels with blue pixels to show the boundaries.
-    int width = src->getWidth();
-    int height = src->getHeight();
-    Image* output = new Image(width, height);
-    for (int x = 0; x < width; x++) {
-        for (int y = 0; y < height; y++) {
-            Pixel srcPixel = src->getPixel(x, y);
-            double red = srcPixel.getColor(RED);
-            double green = srcPixel.getColor(GREEN);
-            double blue = srcPixel.getColor(BLUE);
-            if (red == 1 && green == 1 && blue == 1) {
-                Pixel bluePixel = Pixel(0, 0, 1);
-                output->setPixel(x, y, bluePixel);
-            } else {
-                output->setPixel(x, y, srcPixel);
-            }
-        }
-    }
-    return output;
+    return ip_transpose(src);
+    // local warp to get a rectangular displacement map
+    // make mesh on rectangular image, warp it backward (via its vertices through the displacement map)
+    // compute energy function with this mesh and the original image
+    // optimize energy function to get optimized mesh (on the original image)
+    // use optimized mesh to interpolate displacement of every pixel
+    //   the boundary constraint ensures the optimized mesh fits the original rectangle; fill in few blank pixels
+    // scale the final mesh and re-interpolate to avoid stretching
+    return nullptr;
 }

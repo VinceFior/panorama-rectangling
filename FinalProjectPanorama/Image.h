@@ -30,6 +30,11 @@ using namespace std;
 #define GREEN	1
 #define BLUE	2
 
+struct Coordinate
+{
+    int x;
+    int y;
+};
 
 
 /*
