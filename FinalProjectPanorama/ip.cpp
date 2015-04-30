@@ -1018,16 +1018,6 @@ double ip_energy_boundary(Image* srcImage, vector<vector<CoordinateDouble>> outp
 }
 
 /*
- * Returns the line energy of the meshes on the image with the given angle theta.
- */
-double ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> inputMesh,
-                      vector<vector<CoordinateDouble>> outputMesh, double theta)
-{
-    1; // TO-DO: implement this method
-    return 0;
-}
-
-/*
  * Converts the given Image to a PGM image, a C-style array of doubles (to interface with LSD).
  */
 double* ip_image_to_array(Image* srcImage) {
@@ -1051,6 +1041,308 @@ double* ip_image_to_array(Image* srcImage) {
     }
     
     return imageArray;
+}
+
+/*
+ * Determines whether the given point lies within the quad given by the vertices.
+ */
+bool is_in_quad(CoordinateDouble point, CoordinateDouble topLeft, CoordinateDouble topRight,
+                CoordinateDouble bottomLeft, CoordinateDouble bottomRight)
+{
+    // the point must be to the right of the left line, below the top line, above the bottom line,
+    // and to the left of the right line
+    
+    // must be right of left line
+    if (topLeft.x == bottomLeft.x) {
+        if (point.x < topLeft.x) {
+            return false;
+        }
+    } else {
+        double leftSlope = (topLeft.y - bottomLeft.y) / (topLeft.x - bottomLeft.x);
+        double leftIntersect = topLeft.y - leftSlope * topLeft.x;
+        double yOnLineX = (point.y - leftIntersect) / leftSlope;
+        if (point.x < yOnLineX) {
+            return false;
+        }
+    }
+    // must be left of right line
+    if (topRight.x == bottomRight.x) {
+        if (point.x > topRight.x) {
+            return false;
+        }
+    } else {
+        double rightSlope = (topRight.y - bottomRight.y) / (topRight.x - bottomRight.x);
+        double rightIntersect = topRight.y - rightSlope * topRight.x;
+        double yOnLineX = (point.y - rightIntersect) / rightSlope;
+        if (point.x > yOnLineX) {
+            return false;
+        }
+    }
+    // must be below top line
+    if (topLeft.y == topRight.y) {
+        if (point.y < topLeft.y) {
+            return false;
+        }
+    } else {
+        double topSlope = (topRight.y - topLeft.y) / (topRight.x - topLeft.x);
+        double topIntersect = topLeft.y - topSlope * topLeft.x;
+        double xOnLineY = topSlope * point.x + topIntersect;
+        if (point.y < xOnLineY) {
+            return false;
+        }
+    }
+    // must be above bottom line
+    if (bottomLeft.y == bottomRight.y) {
+        if (point.y > bottomLeft.y) {
+            return false;
+        }
+    } else {
+        double bottomSlope = (bottomRight.y - bottomLeft.y) / (bottomRight.x - bottomLeft.x);
+        double bottomIntersect = bottomLeft.y - bottomSlope * bottomLeft.x;
+        double xOnLineY = bottomSlope * point.x + bottomIntersect;
+        if (point.y > xOnLineY) {
+            return false;
+        }
+    }
+    // if all four constraints are satisfied, the point must be in the quad
+    return true;
+}
+
+/*
+ * Returns whether the given line segment intersects the line of given slope and intersect.
+ * Needs to know if the line is vertical (else horizontal).
+ * If there is an intersection, sets the intersectPoint to the intersection point.
+ */
+bool does_segment_intersect_line(LineSegment lineSegment, double slope, double intersect,
+                                 bool vertical, CoordinateDouble& intersectPoint)
+{
+    // calculate line segment m and b
+    double lineSegmentSlope = INFT;
+    if (lineSegment.x1 != lineSegment.x2) {
+        lineSegmentSlope = (lineSegment.y2 - lineSegment.y1) / (lineSegment.x2 - lineSegment.x1);
+    }
+    double lineSegmentIntersect = lineSegment.y1 - lineSegmentSlope * lineSegment.x1;
+    
+    // calculate intersection
+    if (lineSegmentSlope == slope) {
+        if (lineSegmentIntersect == intersect) {
+            // same line
+            intersectPoint.x = lineSegment.x1;
+            intersectPoint.y = lineSegment.y1;
+            return true;
+        } else {
+            return false;
+        }
+    }
+    double intersectX = (intersect - lineSegmentIntersect) / (lineSegmentSlope - slope);
+    double intersectY = lineSegmentSlope * intersectX + lineSegmentIntersect;
+    // check if intersection is in the bounds of the line segment
+    if (vertical) {
+        if ((intersectY <= lineSegment.y1 && intersectY >= lineSegment.y2) ||
+            (intersectY <= lineSegment.y2 && intersectY >= lineSegment.y1)) {
+            intersectPoint.x = intersectX;
+            intersectPoint.y = intersectY;
+            return true;
+        } else {
+            return false;
+        }
+    } else {
+        if ((intersectX <= lineSegment.x1 && intersectX >= lineSegment.x2) ||
+            (intersectX <= lineSegment.x2 && intersectX >= lineSegment.x1)) {
+            intersectPoint.x = intersectX;
+            intersectPoint.y = intersectY;
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+
+/*
+ * Returns the point(s) at which the line segment intersects the quad.
+ */
+vector<CoordinateDouble> intersections_with_quad(LineSegment lineSegment, CoordinateDouble topLeft,
+                                                 CoordinateDouble topRight, CoordinateDouble bottomLeft,
+                                                 CoordinateDouble bottomRight)
+{
+    vector<CoordinateDouble> intersections;
+    // find the intersections of lineSegment with each of the four quad boundaries, then add each
+    // intersection that is within the appropriate dimension's endpoints of the quad boundary
+    
+    // left
+    double leftSlope = INFT;
+    if (topLeft.x != bottomLeft.x) {
+        leftSlope = (topLeft.y - bottomLeft.y) / (topLeft.x - bottomLeft.x);
+    }
+    double leftIntersect = topLeft.y - leftSlope * topLeft.x;
+    // check
+    CoordinateDouble leftIntersectPoint;
+    if (does_segment_intersect_line(lineSegment, leftSlope, leftIntersect, true, leftIntersectPoint)) {
+        if (leftIntersectPoint.y >= topLeft.y && leftIntersectPoint.y <= bottomLeft.y) {
+            intersections.push_back(leftIntersectPoint);
+        }
+    }
+    
+    // right
+    double rightSlope = INFT;
+    if (topRight.x != bottomRight.x) {
+        rightSlope = (topRight.y - bottomRight.y) / (topRight.x - bottomRight.x);
+    }
+    double rightIntersect = topRight.y - rightSlope * topRight.x;
+    // check
+    CoordinateDouble rightIntersectPoint;
+    if (does_segment_intersect_line(lineSegment, rightSlope, rightIntersect, true, rightIntersectPoint)) {
+        if (rightIntersectPoint.y >= topRight.y && rightIntersectPoint.y <= bottomRight.y) {
+            intersections.push_back(rightIntersectPoint);
+        }
+    }
+    
+    // top
+    double topSlope = INFT;
+    if (topLeft.x != topRight.x) {
+        topSlope = (topRight.y - topLeft.y) / (topRight.x - topLeft.x);
+    }
+    double topIntersect = topLeft.y - topSlope * topLeft.x;
+    // check
+    CoordinateDouble topIntersectPoint;
+    if (does_segment_intersect_line(lineSegment, topSlope, topIntersect, false, topIntersectPoint)) {
+        if (topIntersectPoint.x >= topLeft.x && topIntersectPoint.x <= topRight.x) {
+            intersections.push_back(topIntersectPoint);
+        }
+    }
+    
+    // bottom
+    double bottomSlope = INFT;
+    if (bottomLeft.x != bottomRight.x) {
+        bottomSlope = (bottomRight.y - bottomLeft.y) / (bottomRight.x - bottomLeft.x);
+    }
+    double bottomIntersect = bottomLeft.y - bottomSlope * bottomLeft.x;
+    // check
+    CoordinateDouble bottomIntersectPoint;
+    if (does_segment_intersect_line(lineSegment, bottomSlope, bottomIntersect, false, bottomIntersectPoint)) {
+        if (bottomIntersectPoint.x >= bottomLeft.x && bottomIntersectPoint.x <= bottomRight.x) {
+            intersections.push_back(bottomIntersectPoint);
+        }
+    }
+    
+    return intersections;
+}
+
+/*
+ * Given an array of line segments and a mesh, this method returns a vector like a mesh but where the
+ * element in result[i][j] is a vector of line segments where each line segment is a segment from
+ * lineSegments that has been cut to fit within the quad.
+ */
+vector<vector<vector<LineSegment>>> ip_get_line_segments_in_mesh(double* lineSegments, int numLines,
+                                                                 vector<vector<CoordinateDouble>> mesh)
+{
+    vector<vector<vector<LineSegment>>> lineSegmentsInMesh;
+    
+    // for each quad (i,j)
+    // for each line segment in lineSegments
+    // Find the resulting line segment cut by/into this quad - if it exists, add it to lineSegmentsInMesh[i][j]
+    // If both endpoints are in the quad, just add the line segment as-is (easy)
+    // if both endpoints is_in_quad
+    // If exactly one endpoint is in the quad, determine where the line segment leaves the quad
+    // else if one endpoint is_in_quad, call intersection_with_quad
+    // If no endpoints are in the quad, determine its intersection points with the quad (if any)
+    // else if no endpoints are in the quad
+    // try intersections_with_quad - if two intersections, use them; if none, skip this line
+    
+    size_t numMeshX = mesh.size();
+    size_t numMeshY = mesh[0].size();
+    for (int i = 0; i < numMeshX - 1; i++) {
+        vector<vector<LineSegment>> row;
+        for (int j = 0; j < numMeshY - 1; j++) {
+            // now we have a quad, mesh[i][j]
+            CoordinateDouble topLeft = mesh[i][j];
+            CoordinateDouble topRight = mesh[i+1][j];
+            CoordinateDouble bottomLeft = mesh[i][j+1];
+            CoordinateDouble bottomRight = mesh[i+1][j+1];
+            vector<LineSegment> lineSegmentsInQuad;
+            for (int lineNum = 0; lineNum < numLines; lineNum++) {
+                LineSegment lineSegment;
+                lineSegment.x1 = lineSegments[7*lineNum + 0];
+                lineSegment.y1 = lineSegments[7*lineNum + 1];
+                lineSegment.x2 = lineSegments[7*lineNum + 2];
+                lineSegment.y2 = lineSegments[7*lineNum + 3];
+                // now we have a lineSegment
+                CoordinateDouble lineSegmentPt1;
+                lineSegmentPt1.x = lineSegment.x1;
+                lineSegmentPt1.y = lineSegment.y1;
+                CoordinateDouble lineSegmentPt2;
+                lineSegmentPt2.x = lineSegment.x2;
+                lineSegmentPt2.y = lineSegment.y2;
+                
+                // check if the line segment cut by/into this quad exists
+                bool pt1InQuad = is_in_quad(lineSegmentPt1, topLeft, topRight, bottomLeft, bottomRight);
+                bool pt2InQuad = is_in_quad(lineSegmentPt2, topLeft, topRight, bottomLeft, bottomRight);
+                if (pt1InQuad && pt2InQuad) {
+                    lineSegmentsInQuad.push_back(lineSegment);
+                } else if (pt1InQuad) {
+                    vector<CoordinateDouble> intersections = intersections_with_quad(lineSegment, topLeft, topRight, bottomLeft, bottomRight);
+                    if (intersections.size() != 0) {
+                        LineSegment cutLineSegment;
+                        cutLineSegment.x1 = lineSegmentPt1.x;
+                        cutLineSegment.y1 = lineSegmentPt1.y;
+                        cutLineSegment.x2 = intersections[0].x;
+                        cutLineSegment.y2 = intersections[0].y;
+                        lineSegmentsInQuad.push_back(cutLineSegment);
+                    }
+                } else if (pt2InQuad) {
+                    vector<CoordinateDouble> intersections = intersections_with_quad(lineSegment, topLeft, topRight, bottomLeft, bottomRight);
+                    if (intersections.size() != 0) {
+                        LineSegment cutLineSegment;
+                        cutLineSegment.x1 = lineSegmentPt2.x;
+                        cutLineSegment.y1 = lineSegmentPt2.y;
+                        cutLineSegment.x2 = intersections[0].x;
+                        cutLineSegment.y2 = intersections[0].y;
+                        lineSegmentsInQuad.push_back(cutLineSegment);
+                    }
+                } else {
+                    vector<CoordinateDouble> intersections = intersections_with_quad(lineSegment, topLeft, topRight, bottomLeft, bottomRight);
+                    if (intersections.size() != 0) {
+                        LineSegment cutLineSegment;
+                        cutLineSegment.x1 = intersections[0].x;
+                        cutLineSegment.y1 = intersections[0].y;
+                        cutLineSegment.x2 = intersections[1].x;
+                        cutLineSegment.y2 = intersections[1].y;
+                        lineSegmentsInQuad.push_back(cutLineSegment);
+                    }
+                }
+                
+            }
+            row.push_back(lineSegmentsInQuad);
+        }
+        lineSegmentsInMesh.push_back(row);
+    }
+
+    return lineSegmentsInMesh;
+}
+
+/*
+ * Returns the line energy of the meshes on the image with the given angle theta.
+ */
+double ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> inputMesh,
+                      vector<vector<CoordinateDouble>> outputMesh, double theta)
+{
+    double energy = 0;
+    int width = srcImage->getWidth();
+    int height = srcImage->getHeight();
+    
+    // get lineSegments
+    double* imageArray = ip_image_to_array(srcImage);
+    int numLines;
+    double* lineSegments = lsd(&numLines, imageArray, width, height);
+
+    vector<vector<vector<LineSegment>>> lineSegmentsInMesh = ip_get_line_segments_in_mesh(lineSegments, numLines, inputMesh);
+    // lineSegmentsInMesh[i][j] is a vector of all the line segments in quad inputMesh[i][j]
+    
+    1; // todo: finish this method
+    
+    
+    
+    return energy;
 }
 
 /*
@@ -1099,44 +1391,6 @@ Image* ip_draw_vertices(Image* src, vector<vector<CoordinateDouble>> mesh)
  */
 Image* ip_rectangle(Image* srcImage)
 {
-    
-    
-    
-    double* imageArray = ip_image_to_array(srcImage);
-    
-    // call LSD
-    int numLines;
-    int w = srcImage->getWidth();
-    int h = srcImage->getHeight();
-    double* lineSegments = lsd(&numLines, imageArray, w, h);
-    
-    // show line segments
-    Image *lineImage = new Image(*srcImage);
-//    cerr << "Found " << numLines << " line segments." << endl;
-    for (int i = 0; i < numLines; i++) {
-        double x1 = lineSegments[7*i + 0];
-        double y1 = lineSegments[7*i + 1];
-        double x2 = lineSegments[7*i + 2];
-        double y2 = lineSegments[7*i + 3];
-        Pixel greenPixel = Pixel(0, 1, 0);
-        lineImage->setPixel(clamp(floor(x1), 0, w - 1), clamp(floor(y1), 0, h - 1), greenPixel);
-        lineImage->setPixel(clamp(floor(x2), 0, w - 1), clamp(floor(y2), 0, h - 1), greenPixel);
-//        for (int j = 0; j < 7; j++) {
-//            printf("%f ",lineSegments[7*i+j]);
-//        }
-//        printf("\n");
-    }
-    return lineImage;
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     // === Local warp to get original mesh ===
     
     // First, use local warp to get a rectangular displacement map
@@ -1172,6 +1426,46 @@ Image* ip_rectangle(Image* srcImage)
     }
     
     // === End local warp to get original mesh ===
+    
+    
+    
+    
+    1; // lines cut
+    double* imageArray = ip_image_to_array(srcImage);
+    int numLines;
+    double* lineSegments = lsd(&numLines, imageArray, width, height);
+    vector<vector<vector<LineSegment>>> lineSegmentsInMesh = ip_get_line_segments_in_mesh(lineSegments, numLines, mesh);
+    // add green vertices
+    Image* gridImage = ip_draw_vertices(srcImage, mesh);
+    // add blue cut line segments
+    Pixel bluePixel = Pixel(0, 0, 1);
+    for (int i = 0; i < numMeshX - 1; i++) {
+        for (int j = 0; j < numMeshY - 1; j++) {
+            vector<LineSegment> lineSegmentsInQuad = lineSegmentsInMesh[i][j];
+            for (int k = 0; k < lineSegmentsInQuad.size(); k++) {
+                LineSegment lineSegment = lineSegmentsInQuad[k];
+                gridImage->setPixel(clamp(floor(lineSegment.x1), 0, width-1), clamp(floor(lineSegment.y1), 0, height-1), bluePixel);
+                gridImage->setPixel(clamp(floor(lineSegment.x2), 0, width-1), clamp(floor(lineSegment.y2), 0, height-1), bluePixel);
+            }
+        }
+    }
+    // add red line segment endpoints
+    Pixel redPixel = Pixel(1, 0, 0);
+    for (int i = 0; i < numLines; i++) {
+        double x1 = lineSegments[7*i + 0];
+        double y1 = lineSegments[7*i + 1];
+        double x2 = lineSegments[7*i + 2];
+        double y2 = lineSegments[7*i + 3];
+        gridImage->setPixel(clamp(floor(x1), 0, width-1), clamp(floor(y1), 0, height-1), redPixel);
+        gridImage->setPixel(clamp(floor(x2), 0, width-1), clamp(floor(y2), 0, height-1), redPixel);
+    }
+    return gridImage;
+    
+    
+    
+    
+    
+    
     
     
     // === Optimize mesh ===

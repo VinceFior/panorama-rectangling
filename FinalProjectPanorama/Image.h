@@ -42,6 +42,14 @@ struct CoordinateDouble
     double y;
 };
 
+struct LineSegment
+{
+    double x1;
+    double y1;
+    double x2;
+    double y2;
+};
+
 /*
  * struct to contain an entire pixel's data, up to three channels.  if
  * only one channel then all bur r values in
