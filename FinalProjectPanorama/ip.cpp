@@ -1324,7 +1324,7 @@ vector<vector<vector<LineSegment>>> ip_get_line_segments_in_mesh(double* lineSeg
  * Returns the line energy of the meshes on the image with the given angle theta.
  */
 double ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> inputMesh,
-                      vector<vector<CoordinateDouble>> outputMesh, double theta)
+                      vector<vector<CoordinateDouble>> outputMesh, double *theta, int numBins)
 {
     double energy = 0;
     int width = srcImage->getWidth();
@@ -1336,11 +1336,95 @@ double ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> inputMes
     double* lineSegments = lsd(&numLines, imageArray, width, height);
 
     vector<vector<vector<LineSegment>>> lineSegmentsInMesh = ip_get_line_segments_in_mesh(lineSegments, numLines, inputMesh);
-    // lineSegmentsInMesh[i][j] is a vector of all the line segments in quad inputMesh[i][j]
     
-    1; // todo: finish this method
+    int numLinesOutput; // should be the same as numLines, but might not be
+    double* lineSegmentsOutput = lsd(&numLinesOutput, imageArray, width, height);
+    vector<vector<vector<LineSegment>>> lineSegmentsInMeshOutput = ip_get_line_segments_in_mesh(lineSegmentsOutput, numLinesOutput, outputMesh);
+    // get a flat copy so we can determine corresponding line segments (for the most part..)
+    vector<LineSegment> lineSegmentsInMeshOutputFlat;
+    for (int i = 0; i < lineSegmentsInMeshOutput.size(); i++) {
+        for (int j = 0; j < lineSegmentsInMeshOutput[0].size(); j++) {
+            for (int k = 0; k < lineSegmentsInMeshOutput[i][j].size(); k++) {
+                lineSegmentsInMeshOutputFlat.push_back(lineSegmentsInMeshOutput[i][j][k]);
+            }
+        }
+    }
     
+    double thetaPerBucket = M_PI / numBins;
     
+    size_t numMeshX = inputMesh.size();
+    size_t numMeshY = inputMesh[0].size();
+    long numLineSegments = 0;
+    for (int i = 0; i < numMeshX - 1; i++) {
+        for (int j = 0; j < numMeshY - 1; j++) {
+            
+            CoordinateDouble topLeft = inputMesh[i][j];
+            CoordinateDouble topRight = inputMesh[i+1][j];
+            CoordinateDouble bottomLeft = inputMesh[i][j+1];
+            CoordinateDouble bottomRight = inputMesh[i+1][j+1];
+            
+            vector<LineSegment> lineSegmentsInQuad = lineSegmentsInMesh[i][j];
+            for (int k = 0; k < lineSegmentsInQuad.size(); k++) {
+                
+                // e is [[a,b], [c,d]] where a is the bilinear interpolation of horiz and b is vert; c,d are for pt 2
+                LineSegment lineSegment = lineSegmentsInQuad[k];
+                vector<vector<double>> eHat;
+                vector<double> eHatRow1;
+                eHatRow1.push_back((lineSegment.x1 - topLeft.x)/(topRight.x - topLeft.x));
+                eHatRow1.push_back((lineSegment.y1 - topLeft.y)/(bottomLeft.y - topLeft.y));
+                eHat.push_back(eHatRow1);
+                vector<double> eHatRow2;
+                eHatRow2.push_back((lineSegment.x2 - topLeft.x)/(topRight.x - topLeft.x));
+                eHatRow2.push_back((lineSegment.y2 - topLeft.y)/(bottomLeft.y - topLeft.y));
+                eHat.push_back(eHatRow2);
+                
+                LineSegment lineSegmentOutput = lineSegmentsInMeshOutputFlat[numLineSegments];
+                vector<vector<double>> e;
+                vector<double> eRow1;
+                eRow1.push_back((lineSegmentOutput.x1 - topLeft.x)/(topRight.x - topLeft.x));
+                eRow1.push_back((lineSegmentOutput.y1 - topLeft.y)/(bottomLeft.y - topLeft.y));
+                e.push_back(eRow1);
+                vector<double> eRow2;
+                eRow2.push_back((lineSegmentOutput.x2 - topLeft.x)/(topRight.x - topLeft.x));
+                eRow2.push_back((lineSegmentOutput.y2 - topLeft.y)/(bottomLeft.y - topLeft.y));
+                e.push_back(eRow2);
+                
+                double lineSegmentTheta = atan((lineSegmentOutput.y2 - lineSegmentOutput.y1) /
+                                               (lineSegmentOutput.x2 - lineSegmentOutput.x1));
+                
+                int lineSegmentBucket = (lineSegmentTheta + M_PI / 2) / thetaPerBucket;
+                double targetTheta = theta[lineSegmentBucket];
+                vector<vector<double>> r;
+                vector<double> rRow1;
+                rRow1.push_back(cos(targetTheta));
+                rRow1.push_back(-sin(targetTheta));
+                r.push_back(rRow1);
+                vector<double> rRow2;
+                rRow2.push_back(sin(targetTheta));
+                rRow2.push_back(cos(targetTheta));
+                
+                // C = R*eHat*(eHat^T * eHat)^(-1)*eHat^T*R^T-I
+                vector<vector<double>> ete = matmul(mattrans(eHat), eHat);
+                vector<vector<double>> eteInv = matinv(ete);
+                vector<vector<double>> prdr = matmul(eteInv, mattrans(eHat));
+                vector<vector<double>> prdrr = matmul(prdr, mattrans(r));
+                vector<vector<double>> prdl = matmul(eHat, prdrr);
+                vector<vector<double>> prdll = matmul(r, prdl);
+                vector<vector<double>> c = matsub(prdll, matiden(2));
+                
+                // add (C*e)^2
+                vector<vector<double>> ce = matmul(c, e);
+                double mag = matmag(ce);
+                double magSqrd = pow(mag, 2);
+                energy += magSqrd;
+                
+                numLineSegments++;
+            }
+        }
+    }
+    
+    // normalize
+    energy = energy / numLineSegments;
     
     return energy;
 }
@@ -1349,7 +1433,7 @@ double ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> inputMes
  * Returns the total energy of the meshes on the image with the given angle theta.
  */
 double ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> inputMesh,
-                      vector<vector<CoordinateDouble>> outputMesh, double theta)
+                      vector<vector<CoordinateDouble>> outputMesh, double *theta, int numBins)
 {
     double energy = 0;
     // Add shape energy
@@ -1358,7 +1442,7 @@ double ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> inputMe
     energy += esWeight * shapeEnergy;
     // Add weighted line energy
     double elWeight = 100;
-    double lineEnergy = ip_energy_line(srcImage, inputMesh, outputMesh, theta);
+    double lineEnergy = ip_energy_line(srcImage, inputMesh, outputMesh, theta, numBins);
     energy += elWeight * lineEnergy;
     // Add weighted boundary energy
     double boundaryEnergy = ip_energy_boundary(srcImage, outputMesh);
@@ -1428,46 +1512,6 @@ Image* ip_rectangle(Image* srcImage)
     // === End local warp to get original mesh ===
     
     
-    
-    
-    1; // lines cut
-    double* imageArray = ip_image_to_array(srcImage);
-    int numLines;
-    double* lineSegments = lsd(&numLines, imageArray, width, height);
-    vector<vector<vector<LineSegment>>> lineSegmentsInMesh = ip_get_line_segments_in_mesh(lineSegments, numLines, mesh);
-    // add green vertices
-    Image* gridImage = ip_draw_vertices(srcImage, mesh);
-    // add blue cut line segments
-    Pixel bluePixel = Pixel(0, 0, 1);
-    for (int i = 0; i < numMeshX - 1; i++) {
-        for (int j = 0; j < numMeshY - 1; j++) {
-            vector<LineSegment> lineSegmentsInQuad = lineSegmentsInMesh[i][j];
-            for (int k = 0; k < lineSegmentsInQuad.size(); k++) {
-                LineSegment lineSegment = lineSegmentsInQuad[k];
-                gridImage->setPixel(clamp(floor(lineSegment.x1), 0, width-1), clamp(floor(lineSegment.y1), 0, height-1), bluePixel);
-                gridImage->setPixel(clamp(floor(lineSegment.x2), 0, width-1), clamp(floor(lineSegment.y2), 0, height-1), bluePixel);
-            }
-        }
-    }
-    // add red line segment endpoints
-    Pixel redPixel = Pixel(1, 0, 0);
-    for (int i = 0; i < numLines; i++) {
-        double x1 = lineSegments[7*i + 0];
-        double y1 = lineSegments[7*i + 1];
-        double x2 = lineSegments[7*i + 2];
-        double y2 = lineSegments[7*i + 3];
-        gridImage->setPixel(clamp(floor(x1), 0, width-1), clamp(floor(y1), 0, height-1), redPixel);
-        gridImage->setPixel(clamp(floor(x2), 0, width-1), clamp(floor(y2), 0, height-1), redPixel);
-    }
-    return gridImage;
-    
-    
-    
-    
-    
-    
-    
-    
     // === Optimize mesh ===
     
     // Compute energy function for this mesh
@@ -1475,8 +1519,15 @@ Image* ip_rectangle(Image* srcImage)
     // TO-DO: Something with this mesh
     vector<vector<CoordinateDouble>> outputMesh = mesh;
     // TO-DO: Something with this theta
-    double theta = 0;
-    double energy = ip_energy_total(srcImage, inputMesh, outputMesh, theta);
+    // set theta array to 50 buckets from -pi/2 to pi/2
+    int numBins = 50;
+    double *theta = new double[numBins];
+    double thetaPerBucket = M_PI / numBins;
+    for (int i = 0; i < numBins; i++) {
+        theta[i] = i * thetaPerBucket;
+    }
+    
+    double energy = ip_energy_total(srcImage, inputMesh, outputMesh, theta, numBins);
     
     cerr << "Energy: " << energy << endl;
     
