@@ -14,8 +14,8 @@
 using namespace std;
 
 vector<vector<double>> matinv(vector<vector<double>> m);
-void MatrixInversion(float **A, int order, float **Y);
-int GetMinor(float **src, float **dest, int row, int col, int order);
-double CalcDeterminant( float **mat, int order);
+void MatrixInversion(double **A, int order, double **Y);
+int GetMinor(double **src, double **dest, int row, int col, int order);
+double CalcDeterminant( double **mat, int order);
 
 #endif /* defined(__FinalProjectPanorama__utils__) */

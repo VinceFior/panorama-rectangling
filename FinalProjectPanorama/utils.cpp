@@ -17,13 +17,13 @@ vector<vector<double>> matinv(vector<vector<double>> m)
 {
     int order = (int) m.size();
     
-    float **A; // input (m)
-    float **Y; // output
-    A = new float*[order];
-    Y = new float*[order];
+    double **A; // input (m)
+    double **Y; // output
+    A = new double*[order];
+    Y = new double*[order];
     for (int i = 0; i < order; i++) {
-        A[i] = new float[order];
-        Y[i] = new float[order];
+        A[i] = new double[order];
+        Y[i] = new double[order];
     }
     for (int i = 0; i < order; i++) {
         for (int j = 0; j < order; j++) {
@@ -44,14 +44,14 @@ vector<vector<double>> matinv(vector<vector<double>> m)
 
 // matrix inversioon
 // the result is put in Y
-void MatrixInversion(float **A, int order, float **Y)
+void MatrixInversion(double **A, int order, double **Y)
 {
     // get the determinant of a
     double det = 1.0/CalcDeterminant(A,order);
     
     // memory allocation
-    float *temp = new float[(order-1)*(order-1)];
-    float **minor = new float*[order-1];
+    double *temp = new double[(order-1)*(order-1)];
+    double **minor = new double*[order-1];
     for(int i=0;i<order-1;i++)
         minor[i] = temp+(i*(order-1));
     
@@ -74,7 +74,7 @@ void MatrixInversion(float **A, int order, float **Y)
 }
 
 // calculate the cofactor of element (row,col)
-int GetMinor(float **src, float **dest, int row, int col, int order)
+int GetMinor(double **src, double **dest, int row, int col, int order)
 {
     // indicate which col and row is being copied to dest
     int colCount=0,rowCount=0;
@@ -101,7 +101,7 @@ int GetMinor(float **src, float **dest, int row, int col, int order)
 }
 
 // Calculate the determinant recursively.
-double CalcDeterminant( float **mat, int order)
+double CalcDeterminant( double **mat, int order)
 {
     // order must be >= 0
     // stop the recursion when matrix is a single element
@@ -109,13 +109,13 @@ double CalcDeterminant( float **mat, int order)
         return mat[0][0];
     
     // the determinant value
-    float det = 0;
+    double det = 0;
     
     // allocate the cofactor matrix
-    float **minor;
-    minor = new float*[order-1];
+    double **minor;
+    minor = new double*[order-1];
     for(int i=0;i<order-1;i++)
-        minor[i] = new float[order-1];
+        minor[i] = new double[order-1];
     
     for(int i = 0; i < order; i++ )
     {

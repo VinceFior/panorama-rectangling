@@ -16,6 +16,7 @@
 		BF6186B31AE5CBAD008FFD32 /* ip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BF6186B11AE5CBAD008FFD32 /* ip.cpp */; };
 		BF6186B61AF0B4AC008FFD32 /* utils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BF6186B41AF0B4AC008FFD32 /* utils.cpp */; };
 		BF6186BC1AF19286008FFD32 /* lsd.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BF6186BA1AF19286008FFD32 /* lsd.cpp */; };
+		BF6186BF1AF75B7D008FFD32 /* Quadratic.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BF6186BD1AF75B7D008FFD32 /* Quadratic.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -48,6 +49,8 @@
 		BF6186B51AF0B4AC008FFD32 /* utils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = "<group>"; };
 		BF6186BA1AF19286008FFD32 /* lsd.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = lsd.cpp; sourceTree = "<group>"; };
 		BF6186BB1AF19286008FFD32 /* lsd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = lsd.h; sourceTree = "<group>"; };
+		BF6186BD1AF75B7D008FFD32 /* Quadratic.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Quadratic.cpp; sourceTree = "<group>"; };
+		BF6186BE1AF75B7D008FFD32 /* Quadratic.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Quadratic.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,6 +98,8 @@
 				BF6186A11ADDB589008FFD32 /* Image.cpp */,
 				BF6186B21AE5CBAD008FFD32 /* ip.h */,
 				BF6186B11AE5CBAD008FFD32 /* ip.cpp */,
+				BF6186BE1AF75B7D008FFD32 /* Quadratic.h */,
+				BF6186BD1AF75B7D008FFD32 /* Quadratic.cpp */,
 				BF6186B51AF0B4AC008FFD32 /* utils.h */,
 				BF6186B41AF0B4AC008FFD32 /* utils.cpp */,
 				BF6186BB1AF19286008FFD32 /* lsd.h */,
@@ -160,6 +165,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF6186B31AE5CBAD008FFD32 /* ip.cpp in Sources */,
+				BF6186BF1AF75B7D008FFD32 /* Quadratic.cpp in Sources */,
 				BF6186B61AF0B4AC008FFD32 /* utils.cpp in Sources */,
 				BF6186A81ADDB782008FFD32 /* control.cpp in Sources */,
 				BF6186BC1AF19286008FFD32 /* lsd.cpp in Sources */,
