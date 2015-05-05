@@ -8,6 +8,7 @@
 
 #include "Quadratic.h"
 #include <iostream>
+#include <math.h>
 
 Quadratic::Quadratic(int numVariables)
 {
@@ -75,6 +76,16 @@ void Quadratic::setCoeffForVars(int varIndex1, int varIndex2, double value)
     term.varIndex2 = varIndex2;
     term.coefficientValue = value;
     coefficients.push_back(term);
+}
+
+void Quadratic::incrementCoeffForVar(int varIndex, double value)
+{
+    setCoeffForVar(varIndex, value + getCoeffForVar(varIndex));
+}
+
+void Quadratic::incrementCoeffForVars(int varIndex1, int varIndex2, double value)
+{
+    setCoeffForVars(varIndex1, varIndex2, value + getCoeffForVars(varIndex1, varIndex2));
 }
 
 /*
@@ -177,6 +188,56 @@ void Quadratic::addQuadratic(Quadratic quad, double weight)
 }
 
 /*
+ * Multiplies all coefficients by the given scale factor.
+ */
+void Quadratic::scaleCoefficients(double scaleFactor)
+{
+    for (int i = 0; i < coefficients.size(); i++) {
+        QuadraticTerm& term = coefficients[i];
+        term.coefficientValue *= scaleFactor;
+    }
+}
+
+/*
+ * Rounds all coefficients of absolute value less than epsilon to 0.
+ */
+void Quadratic::roundCoefficients(double epsilon)
+{
+    for (int i = 0; i < coefficients.size(); i++) {
+        QuadraticTerm &term = coefficients[i];
+        if (fabs(term.coefficientValue) < epsilon) {
+            term.coefficientValue = 0;
+        }
+    }
+}
+
+/*
+ * Unfinished convenience method.
+ */
+string Quadratic::varIndexToStr(int varIndex)
+{
+    if (varIndex == 0) {
+        return "x0";
+    } else if (varIndex == 1) {
+        return "y0";
+    } else if (varIndex == 2) {
+        return "x1";
+    } else if (varIndex == 3) {
+        return "y1";
+    } else if (varIndex == 4) {
+        return "x2";
+    } else if (varIndex == 5) {
+        return "y2";
+    } else if (varIndex == 6) {
+        return "x3";
+    } else if (varIndex == 7) {
+        return "y3";
+    } else {
+        return to_string(varIndex);
+    }
+}
+
+/*
  * Prints out the coefficients of the variables in the equation (to cerr).
  * Ex., the equation 7a^2 + 2ab - 3b^2 + 5a is 7:0*0 2:0*1 -3:1*1 5:0.
  */
@@ -185,11 +246,11 @@ void Quadratic::printEquation()
     for (int i = 0; i < coefficients.size(); i++) {
         QuadraticTerm term = coefficients[i];
         if (term.varIndex1 != -1 && term.varIndex2 != -1) {
-            cerr << term.coefficientValue << ":" << term.varIndex1 << "*" << term.varIndex2 << " ";
+            cerr << term.coefficientValue << ":" << varIndexToStr(term.varIndex1) << "*" << varIndexToStr(term.varIndex2) << " ";
         } else if (term.varIndex1 != -1 && term.varIndex2 == -1) {
-            cerr << term.coefficientValue << ":" << term.varIndex1 << " ";
+            cerr << term.coefficientValue << ":" << varIndexToStr(term.varIndex1) << " ";
         } else if (term.varIndex2 != -1 && term.varIndex1 == -1) {
-            cerr << term.coefficientValue << ":" << term.varIndex2 << " ";
+            cerr << term.coefficientValue << ":" << varIndexToStr(term.varIndex2) << " ";
         } else {
             // this case should never happen (because we don't include constant terms)
             cerr << term.coefficientValue << ":: ";

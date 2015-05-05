@@ -33,8 +33,12 @@ public:
     double getCoeffForVars(int varIndex1, int varIndex2);
     void setCoeffForVar(int varIndex, double value);
     void setCoeffForVars(int varIndex1, int varIndex2, double value);
+    void incrementCoeffForVar(int varIndex, double value);
+    void incrementCoeffForVars(int varIndex1, int varIndex2, double value);
     double **derivatives();
     void addQuadratic(Quadratic quad, double weight);
+    void scaleCoefficients(double scaleFactor);
+    void roundCoefficients(double epsilon);
     void printEquation();
 private:
     vector<QuadraticTerm> coefficients;
@@ -42,6 +46,7 @@ private:
     size_t quadraticIndexForInputIndex(int inputIndex);
     size_t quadraticIndexForInputIndices(int inputIndex1, int inputIndex2);
     double *derivativeWithRespectToInputIndex(int inputIndex);
+    string varIndexToStr(int varIndex);
 };
 
 #endif /* defined(__FinalProjectPanorama__Quadratic__) */

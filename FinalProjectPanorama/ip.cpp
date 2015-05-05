@@ -848,180 +848,168 @@ int variableIndexForCoordDimen(int vertexX, int vertexY, bool y, size_t numX)
     }
     return variableIndex;
 }
+/*
+ * Returns the quadratic terms for the translation energy for the given mesh.
+ * I came up with this energy function to encourage vertices to stay anchored to their original
+ * coordinates, which seems to help ensure reasonable results.
+ */
+Quadratic ip_energy_translation(vector<vector<CoordinateDouble>> mesh)
+{
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
+    
+    int numVariables = (int) (numMeshX * numMeshY * 2);
+    Quadratic energyQuadratic = Quadratic(numVariables);
+    
+    // Add a quadratic term about each vertex's original position in the mesh
+    // (z_i - (z_i^))^2 for all vertices
+    //  = (z_i)^2 - 2*(z_i)*(z_i^) + (z_i^)^2
+    for (int i = 0; i < numMeshY; i++) {
+        for (int j = 0; j < numMeshX; j++) {
+            CoordinateDouble coord = mesh[i][j];
+            //x
+            int xVarIndex = variableIndexForCoordDimen(j, i, false, numMeshX);
+            energyQuadratic.setCoeffForVars(xVarIndex, xVarIndex, 1);
+            energyQuadratic.setCoeffForVar(xVarIndex, -2 * coord.x);
+            //y
+            int yVarIndex = variableIndexForCoordDimen(j, i, true, numMeshX);
+            energyQuadratic.setCoeffForVars(yVarIndex, yVarIndex, 1);
+            energyQuadratic.setCoeffForVar(yVarIndex, -2 * coord.y);
+        }
+    }
+    
+    return energyQuadratic;
+}
 
 /*
  * Returns the quadratic terms for the shape energy for the given mesh.
  */
 Quadratic ip_energy_shape(vector<vector<CoordinateDouble>> mesh)
 {
-    size_t numMeshX = mesh.size();
-    size_t numMeshY = mesh[0].size();
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
     
     int numVariables = (int) (numMeshX * numMeshY * 2);
     Quadratic energyQuadratic = Quadratic(numVariables);
+
+    size_t numberOfQuads = (numMeshX - 1) * (numMeshY - 1);
     
-    // FOR NOW, make it quadratic about each vertex's original position in the mesh
-    // (z_i - (z_i^))^2 for all vertices
-    //  = (z_i)^2 - 2*(z_i)*(z_i^) + (z_i^)^2
-    for (int i = 0; i < numMeshX; i++) {
-        for (int j = 0; j < numMeshY; j++) {
-            CoordinateDouble coord = mesh[i][j];
-            //x
-            int xVarIndex = variableIndexForCoordDimen(i, j, false, numMeshX);
-            energyQuadratic.setCoeffForVars(xVarIndex, xVarIndex, 1);
-            energyQuadratic.setCoeffForVar(xVarIndex, -2 * coord.x);
-            //y
-            int yVarIndex = variableIndexForCoordDimen(i, j, true, numMeshX);
-            energyQuadratic.setCoeffForVars(yVarIndex, yVarIndex, 1);
-            energyQuadratic.setCoeffForVar(yVarIndex, -2 * coord.y);
+    // iterate through each quad; each quad is defined by its upper-left (small y, small x) corner
+    for (int row = 0; row < numMeshY - 1; row++) {
+        for (int col = 0; col < numMeshX - 1; col++) {
+            // 8x4 matrix aq = [[x0, -y0, 1, 0], [y0, x0, 0, 1], ..., [x3, -y3, 1, 0], [y3, x3, 0, 1]] of the input quad
+            vector<vector<double>> aq;
+            
+            CoordinateDouble v0in = mesh[row][col]; // upper left
+            
+            vector<double> row0;
+            row0.push_back(v0in.x);
+            row0.push_back(-v0in.y);
+            row0.push_back(1);
+            row0.push_back(0);
+            aq.push_back(row0);
+            
+            vector<double> row1;
+            row1.push_back(v0in.y);
+            row1.push_back(v0in.x);
+            row1.push_back(0);
+            row1.push_back(1);
+            aq.push_back(row1);
+            
+            CoordinateDouble v1in = mesh[row][col+1]; // upper right
+            
+            vector<double> row2;
+            row2.push_back(v1in.x);
+            row2.push_back(-v1in.y);
+            row2.push_back(1);
+            row2.push_back(0);
+            aq.push_back(row2);
+            
+            vector<double> row3;
+            row3.push_back(v1in.y);
+            row3.push_back(v1in.x);
+            row3.push_back(0);
+            row3.push_back(1);
+            aq.push_back(row3);
+            
+            CoordinateDouble v2in = mesh[row+1][col]; // lower left
+            
+            vector<double> row4;
+            row4.push_back(v2in.x);
+            row4.push_back(-v2in.y);
+            row4.push_back(1);
+            row4.push_back(0);
+            aq.push_back(row4);
+            
+            vector<double> row5;
+            row5.push_back(v2in.y);
+            row5.push_back(v2in.x);
+            row5.push_back(0);
+            row5.push_back(1);
+            aq.push_back(row5);
+            
+            CoordinateDouble v3in = mesh[row+1][col+1]; // lower right
+            
+            vector<double> row6;
+            row6.push_back(v3in.x);
+            row6.push_back(-v3in.y);
+            row6.push_back(1);
+            row6.push_back(0);
+            aq.push_back(row6);
+            
+            vector<double> row7;
+            row7.push_back(v3in.y);
+            row7.push_back(v3in.x);
+            row7.push_back(0);
+            row7.push_back(1);
+            aq.push_back(row7);
+            // end aq
+            
+            
+            // add ((aq*(aq^T*aq)^(-1)*aq^T-I)*vq)^2
+            vector<vector<double>> aqt = mattrans(aq);
+            vector<vector<double>> aqtXaq = matmul(aqt, aq);
+            vector<vector<double>> inv = matinvGJ(aqtXaq);
+            vector<vector<double>> prdr = matmul(inv, aqt);
+            vector<vector<double>> prdl = matmul(aq, prdr);
+            vector<vector<double>> iden = matiden(8);
+            vector<vector<double>> mat = matsub(prdl, iden);
+            
+            // get the indices of the four corners of this quadrilateral
+            int topLeftIndexX = variableIndexForCoordDimen(col, row, false, numMeshX);
+            int topLeftIndexY = variableIndexForCoordDimen(col, row, true, numMeshX);
+            int topRightIndexX = variableIndexForCoordDimen(col+1, row, false, numMeshX);
+            int topRightIndexY = variableIndexForCoordDimen(col+1, row, true, numMeshX);
+            int bottomLeftIndexX = variableIndexForCoordDimen(col, row+1, false, numMeshX);
+            int bottomLeftIndexY = variableIndexForCoordDimen(col, row+1, true, numMeshX);
+            int bottomRightIndexX = variableIndexForCoordDimen(col+1, row+1, false, numMeshX);
+            int bottomRightIndexY = variableIndexForCoordDimen(col+1, row+1, true, numMeshX);
+            int quadCoordinateVarIndices[8] = {topLeftIndexX, topLeftIndexY,
+                                               topRightIndexX, topRightIndexY,
+                                               bottomLeftIndexX, bottomLeftIndexY,
+                                               bottomRightIndexX, bottomRightIndexY};
+            
+            for (int ii = 0; ii < 8; ii++) {
+                // the contributions of this row of the product (r_ii)
+                
+                // all terms
+                for (int jj = 0; jj < 8; jj++) {
+                    for (int kk = 0; kk < 8; kk++) {
+                        // the squared term of quadCoordinateVarIndices[jj]
+                        energyQuadratic.incrementCoeffForVars(quadCoordinateVarIndices[jj],
+                                                              quadCoordinateVarIndices[kk],
+                                                              mat[ii][jj] * mat[ii][kk]);
+                    }
+                }
+            }
+            
         }
     }
     
+    // normalize
+    energyQuadratic.scaleCoefficients(1.0 / numberOfQuads);
     
     return energyQuadratic;
-    
-//    size_t numMeshX = inputMesh.size();
-//    size_t numMeshY = inputMesh[0].size();
-//    double energy = 0;
-//    size_t numberOfQuads = (numMeshX - 1) * (numMeshY - 1);
-//    
-//    // iterate through each quad; each quad is defined by its upper-left (small y, small x) corner
-//    for (int i = 0; i < numMeshX - 1; i++) {
-//        for (int j = 0; j < numMeshY - 1; j++) {
-//            
-//            // 8x4 matrix aq = [[x0, -y0, 1, 0], [y0, x0, 0, 1], ..., [x3, -y3, 1, 0], [y3, x3, 0, 1]] of the input quad
-//            vector<vector<double>> aq;
-//            
-//            CoordinateDouble v0in = inputMesh[i][j]; // upper left
-//            
-//            vector<double> row0;
-//            row0.push_back(v0in.x);
-//            row0.push_back(-v0in.y);
-//            row0.push_back(1);
-//            row0.push_back(0);
-//            aq.push_back(row0);
-//            
-//            vector<double> row1;
-//            row1.push_back(v0in.y);
-//            row1.push_back(v0in.x);
-//            row1.push_back(0);
-//            row1.push_back(1);
-//            aq.push_back(row1);
-//            
-//            CoordinateDouble v1in = inputMesh[i+1][j]; // upper right
-//            
-//            vector<double> row2;
-//            row2.push_back(v1in.x);
-//            row2.push_back(-v1in.y);
-//            row2.push_back(1);
-//            row2.push_back(0);
-//            aq.push_back(row2);
-//            
-//            vector<double> row3;
-//            row3.push_back(v1in.y);
-//            row3.push_back(v1in.x);
-//            row3.push_back(0);
-//            row3.push_back(1);
-//            aq.push_back(row3);
-//            
-//            CoordinateDouble v2in = inputMesh[i][j+1]; // lower left
-//            
-//            vector<double> row4;
-//            row4.push_back(v2in.x);
-//            row4.push_back(-v2in.y);
-//            row4.push_back(1);
-//            row4.push_back(0);
-//            aq.push_back(row4);
-//            
-//            vector<double> row5;
-//            row5.push_back(v2in.y);
-//            row5.push_back(v2in.x);
-//            row5.push_back(0);
-//            row5.push_back(1);
-//            aq.push_back(row5);
-//            
-//            CoordinateDouble v3in = inputMesh[i+1][j+1]; // lower right
-//            
-//            vector<double> row6;
-//            row6.push_back(v3in.x);
-//            row6.push_back(-v3in.y);
-//            row6.push_back(1);
-//            row6.push_back(0);
-//            aq.push_back(row6);
-//            
-//            vector<double> row7;
-//            row7.push_back(v3in.y);
-//            row7.push_back(v3in.x);
-//            row7.push_back(0);
-//            row7.push_back(1);
-//            aq.push_back(row7);
-//            // end aq
-//            
-//            
-//            // 8x1 vector vq = [x0, y0, x1, y1, x2, y2, x3, y3], the four vertices of the output quad
-//            vector<vector<double>> vq;
-//            
-//            CoordinateDouble v0out = outputMesh[i][j]; // upper left
-//            
-//            vector<double> vrow0;
-//            vrow0.push_back(v0out.x);
-//            vq.push_back(vrow0);
-//            
-//            vector<double> vrow1;
-//            vrow1.push_back(v0out.y);
-//            vq.push_back(vrow1);
-//            
-//            CoordinateDouble v1out = outputMesh[i+1][j]; // upper right
-//            
-//            vector<double> vrow2;
-//            vrow2.push_back(v1out.x);
-//            vq.push_back(vrow2);
-//            
-//            vector<double> vrow3;
-//            vrow3.push_back(v1out.y);
-//            vq.push_back(vrow3);
-//            
-//            CoordinateDouble v2out = outputMesh[i][j+1]; // lower left
-//            
-//            vector<double> vrow4;
-//            vrow4.push_back(v2out.x);
-//            vq.push_back(vrow4);
-//            
-//            vector<double> vrow5;
-//            vrow5.push_back(v2out.y);
-//            vq.push_back(vrow5);
-//            
-//            CoordinateDouble v3out = outputMesh[i+1][j+1]; // lower right
-//
-//            vector<double> vrow6;
-//            vrow6.push_back(v3out.x);
-//            vq.push_back(vrow6);
-//            
-//            vector<double> vrow7;
-//            vrow7.push_back(v3out.y);
-//            vq.push_back(vrow7);
-//            // end vq
-//            
-//            
-//            // add ((aq*(aq^T*aq)^(-1)*aq^T-I)*vq)^2
-//            vector<vector<double>> aqt = mattrans(aq);
-//            vector<vector<double>> aqtXaq = matmul(aqt, aq);
-//            vector<vector<double>> inv = matinv(aqtXaq); matinvMinor
-//            vector<vector<double>> prdr = matmul(inv, aqt);
-//            vector<vector<double>> prdl = matmul(aq, prdr);
-//            vector<vector<double>> iden = matiden(8);
-//            vector<vector<double>> dif = matsub(prdl, iden);
-//            vector<vector<double>> term = matmul(dif, vq);
-//            double mag = matmag(term);
-//            double magSqrd = pow(mag, 2);
-//            energy += magSqrd;
-//        }
-//    }
-//    
-//    // normalize
-//    energy = energy / numberOfQuads;
-//    
-//    return energy;
 }
 
 /*
@@ -1033,8 +1021,8 @@ Quadratic ip_energy_boundary(Image* srcImage, vector<vector<CoordinateDouble>> m
 {
     int width = srcImage->getWidth();
     int height = srcImage->getHeight();
-    size_t numMeshX = mesh.size();
-    size_t numMeshY = mesh[0].size();
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
     
     int numVariables = (int) (numMeshX * numMeshY * 2);
     Quadratic energyQuadratic = Quadratic(numVariables);
@@ -1305,8 +1293,9 @@ vector<vector<vector<LineSegment>>> ip_get_line_segments_in_mesh(double* lineSeg
     // else if no endpoints are in the quad
     // try intersections_with_quad - if two intersections, use them; if none, skip this line
     
-    size_t numMeshX = mesh.size();
-    size_t numMeshY = mesh[0].size();
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
+    // TODO: fix switching x and y (it's now mesh[rol][col] = mesh[y][x])
     for (int i = 0; i < numMeshX - 1; i++) {
         vector<vector<LineSegment>> row;
         for (int j = 0; j < numMeshY - 1; j++) {
@@ -1492,14 +1481,14 @@ double *ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> mesh,
 Quadratic ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> mesh,
                         double *theta, int numBins)
 {
-    size_t numMeshX = mesh.size();
-    size_t numMeshY = mesh[0].size();
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
     int numVariables = (int) (numMeshX * numMeshY * 2);
     Quadratic energyQuadratic = Quadratic(numVariables);
     
     // Add shape energy
     Quadratic shapeEnergyQuadratic = ip_energy_shape(mesh);
-    double esWeight = 1;
+    double esWeight = 10;
     energyQuadratic.addQuadratic(shapeEnergyQuadratic, esWeight);
     
     // Add weighted line energy
@@ -1514,22 +1503,42 @@ Quadratic ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> mesh
     double ebWeight = INFT;
     energyQuadratic.addQuadratic(boundaryEnergyQuadratic, ebWeight);
     
+    // Add my custom translation energy
+    Quadratic translationEnergyQuadratic = ip_energy_translation(mesh);
+    double etWeight = 1;
+    energyQuadratic.addQuadratic(translationEnergyQuadratic, etWeight);
+    
     return energyQuadratic;
 }
 
 /*
  * Draws the vertices of the given mesh on the given image.
+ * Vertices on a boundary are drawn in blue; all other vertices are green.
  */
 Image* ip_draw_vertices(Image* src, vector<vector<CoordinateDouble>> mesh)
 {
-    size_t numMeshX = mesh.size();
-    size_t numMeshY = mesh[0].size();
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
     Image* result = new Image(*src);
-    for (int i = 0; i < numMeshX; i++) {
-        for (int j = 0; j < numMeshY; j++) {
+    // set non-boundaries
+    for (int i = 0; i < numMeshY; i++) {
+        for (int j = 0; j < numMeshX; j++) {
             CoordinateDouble meshVertexCoord = mesh[i][j];
             Pixel greenPixel = Pixel(0, 1, 0);
-            result->setPixel(floor(meshVertexCoord.x), floor(meshVertexCoord.y), greenPixel);
+            if (i == 0 || i == numMeshY - 1 || j == 0 || j == numMeshX - 1) {
+                continue;
+            }
+            result->setPixel(clamp(meshVertexCoord.x, 0, src->getWidth()-1), clamp(meshVertexCoord.y, 0, src->getHeight() - 1), greenPixel);
+        }
+    }
+    // set boundaries
+    for (int i = 0; i < numMeshY; i++) {
+        for (int j = 0; j < numMeshX; j++) {
+            CoordinateDouble meshVertexCoord = mesh[i][j];
+            Pixel bluePixel = Pixel(0, 0, 1);
+            if (i == 0 || i == numMeshY - 1 || j == 0 || j == numMeshX - 1) {
+                result->setPixel(clamp(meshVertexCoord.x, 0, src->getWidth()-1), clamp(meshVertexCoord.y, 0, src->getHeight() - 1), bluePixel);
+            }
         }
     }
     return result;
@@ -1556,9 +1565,9 @@ Image* ip_rectangle(Image* srcImage)
     double widthPerMesh = double(width-1) / (numMeshX - 1);
     double heightPerMesh = double(height-1) / (numMeshY - 1);
     vector<vector<CoordinateDouble>> mesh;
-    for (int x = 0; x < numMeshX; x++) {
+    for (int y = 0; y < numMeshY; y++) {
         vector<CoordinateDouble> meshRow;
-        for (int y = 0; y < numMeshY; y++) {
+        for (int x = 0; x < numMeshX; x++) {
             CoordinateDouble coord;
             coord.x = x * widthPerMesh;
             coord.y = y * heightPerMesh;
@@ -1567,8 +1576,8 @@ Image* ip_rectangle(Image* srcImage)
         mesh.push_back(meshRow);
     }
     // ..and warp the mesh backward to the original image
-    for (int i = 0; i < numMeshX; i++) {
-        for (int j = 0; j < numMeshY; j++) {
+    for (int i = 0; i < numMeshY; i++) {
+        for (int j = 0; j < numMeshX; j++) {
             CoordinateDouble& meshVertexCoord = mesh[i][j];
             Coordinate vertexDisplacement = displacementMap[floor(meshVertexCoord.x)][floor(meshVertexCoord.y)];
             meshVertexCoord.x += vertexDisplacement.x;
@@ -1599,8 +1608,16 @@ Image* ip_rectangle(Image* srcImage)
     
     // Get energy
     Quadratic energyQuadratic = ip_energy_total(srcImage, mesh, theta, numBins);
+//    energyQuadratic.roundCoefficients(0.000001); // round for readability; has little impact on result
+//    energyQuadratic.printEquation();
     // Get derivative
     double **derivatives = energyQuadratic.derivatives();
+//    for (int i = 0; i < (numMeshX * numMeshY * 2); i++) {
+//        for (int j = 0; j < (numMeshX * numMeshY * 2) + 1; j++) {
+//            cerr << derivatives[i][j] << " ";
+//        }
+//        cerr << endl;
+//    }
     // The only issue with this matrix is that it's one col too wide, due to each equation's
     // constant term. We now make a vertical matrix and a square matrix.
     int numVariables = (int) (numMeshX * numMeshY * 2);
@@ -1612,8 +1629,10 @@ Image* ip_rectangle(Image* srcImage)
     }
     vector<vector<double>>squareMatrix;
     for (int i = 0; i < numVariables; i++) {
+        // i is like y (row)
         vector<double> row;
         for (int j = 0; j < numVariables; j++) {
+            // j is like x (col)
             row.push_back(derivatives[i][j]);
         }
         squareMatrix.push_back(row);
@@ -1623,9 +1642,10 @@ Image* ip_rectangle(Image* srcImage)
     vector<vector<double>>solutionVariables = matmul(inverseSquareMatrix, colVector);
     // Finally, we can convert the list of variables to coordinates.
     vector<vector<CoordinateDouble>> outputMesh;
-    for (int x = 0; x < numMeshX; x++) {
+    for (int y = 0; y < numMeshY; y++) {
         vector<CoordinateDouble> outputMeshRow;
-        for (int y = 0; y < numMeshY; y++) {
+        for (int x = 0; x < numMeshX; x++) {
+            // note that this loop repeats half the pairs, but that's okay
             CoordinateDouble coord;
             int xVariableIndex = variableIndexForCoordDimen(x, y, false, numMeshX);
             int yVariableIndex = variableIndexForCoordDimen(x, y, true, numMeshX);
@@ -1637,6 +1657,17 @@ Image* ip_rectangle(Image* srcImage)
     }
     
     cerr << " Finished mesh optimization." << endl;
+    
+//    cerr << "Output mesh:" << endl;
+//    for (int y = 0; y < numMeshY; y++) {
+//        for (int x = 0; x < numMeshX; x++) {
+//            CoordinateDouble coord = outputMesh[y][x];
+//            cerr << "(" << coord.x << ", " << coord.y << "), ";
+//        }
+//        cerr << endl;
+//    }
+    
+    return ip_draw_vertices(srcImage, outputMesh);
     
     // === End optimize mesh ===
     
