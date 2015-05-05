@@ -15,6 +15,7 @@ using namespace std;
 
 vector<vector<double>> matinv(vector<vector<double>> m);
 void MatrixInversion(double **A, int order, double **Y);
+void MatrixInversionGJ(double **A, int order, double **Y);
 int GetMinor(double **src, double **dest, int row, int col, int order);
 double CalcDeterminant( double **mat, int order);
 

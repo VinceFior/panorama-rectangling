@@ -7,8 +7,11 @@
 //
 
 #include "utils.h"
+#include <math.h>
+//#include <iostream>
 
-// methods taken from https://chi3x10.wordpress.com/2008/05/28/calculate-matrix-inversion-in-c/
+// methods taken from https://chi3x10.wordpress.com/2008/05/28/calculate-matrix-inversion-in-c/ ,
+//  with reference from http://hullooo.blogspot.com/2011/02/matrix-inversion-by-gauss-jordan.html
 
 /*
  * The given matrix must be square.
@@ -42,8 +45,8 @@ vector<vector<double>> matinv(vector<vector<double>> m)
     return result;
 }
 
-// matrix inversioon
-// the result is put in Y
+// Matrix inversion, using minors.
+// The result is put in Y
 void MatrixInversion(double **A, int order, double **Y)
 {
     // get the determinant of a
@@ -133,4 +136,97 @@ double CalcDeterminant( double **mat, int order)
     delete [] minor;
     
     return det;
+}
+
+// Matrix inversion, using Gauss-Jordan elimination.
+// The result is put in Y.
+void MatrixInversionGJ(double **A, int order, double **Y)
+{
+    double augmentedmatrix[order][2*order] ;
+    
+    // store the augmented matrix as a matrix of dimensions (order)x(2*order) in 2D array
+    for (int i = 0; i < order; i++) {
+        for (int j = 0; j < order; j++) {
+            augmentedmatrix[i][j] = A[i][j];
+        }
+    }
+    
+    // augment with the identity matrix
+    for (int i = 0; i < order; i++) {
+        for (int j = order; j < 2 * order; j++) {
+            if (i == (j % order)) {
+                augmentedmatrix[i][j] = 1;
+            } else {
+                augmentedmatrix[i][j] = 0;
+            }
+        }
+    }
+    
+//    cerr << "The initial augmented matrix is: " << endl;
+//    for(int i = 0; i < order; i++) {
+//        for(int j = 0; j < 2 * order; j++) {
+//            cerr << " " << augmentedmatrix[i][j];
+//        }
+//        cerr << endl;
+//    }
+    
+    for (int j = 0; j < order; j++) {
+//        // swap
+//        int maxIndex = j;
+//        for (int i = 0; i < order; i++) {
+//            if (augmentedmatrix[i][j] > augmentedmatrix[maxIndex][j]) {
+//                maxIndex = i;
+//            }
+//        }
+//        // swap row j with row maxIndex
+//        if (maxIndex != j) {
+//            for (int k = 0; k < 2 * order; k++) {
+//                int tempValue = augmentedmatrix[j][k];
+//                augmentedmatrix[j][k] = augmentedmatrix[maxIndex][k];
+//                augmentedmatrix[maxIndex][k] = tempValue;
+//            }
+//        }
+        
+        for (int i = 0; i < order; i++) {
+            // assumes nonzero - TODO: fix this (perhaps by switching with row of largest value?)
+            if (i == j) {
+                // divide each element in the row by the current element
+                double val = augmentedmatrix[i][j];
+                for (int k = 0; k < 2 * order; k++) {
+                    augmentedmatrix[i][k] /= val;
+                }
+            } else {
+                // subtract each element in the row by a number
+                double val = augmentedmatrix[i][j];
+                double factor = val / augmentedmatrix[j][j];
+                for (int k = 0; k < 2 * order; k++) {
+                    augmentedmatrix[i][k] -= factor * augmentedmatrix[j][k];
+                }
+            }
+        }
+        
+    }
+    
+//    cerr << "After Gauss-Jordan elimination, the augmented matrix is: " << endl;
+//    for(int i = 0; i < order; i++) {
+//        for(int j = 0; j < 2 * order; j++) {
+//            cerr << " " << augmentedmatrix[i][j];
+//        }
+//        cerr << endl;
+//    }
+//   
+//    cerr << "The inverse of the given matrix is: " << endl;
+//    for(int i = 0; i < order; i++) {
+//        for(int j = order; j < 2 * order; j++) {
+//            cerr << " " << augmentedmatrix[i][j];
+//        }
+//        cerr << endl;
+//    }
+    
+    // move the right side of the augmented matrix into the output array Y
+    for (int i = 0; i < order; i++) {
+        for (int j = order; j < 2 * order; j++) {
+            Y[i][j - order] = augmentedmatrix[i][j];
+        }
+    }
 }
