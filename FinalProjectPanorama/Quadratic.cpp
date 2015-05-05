@@ -9,29 +9,9 @@
 #include "Quadratic.h"
 #include <iostream>
 
-/*
- * Computes n!
- */
-size_t factorial(size_t n)
-{
-    if (n == 0) {
-        return 1;
-    } else {
-        return n * factorial(n - 1);
-    }
-}
-
 Quadratic::Quadratic(int numVariables)
 {
-    // the terms are (not in order): each variable squared, each two choices of variables, each one variable
-    // numTerms = numVariables + (numVariables choose 2) + numVariables
-    //  = n!/(2(n-2)!) + 2 * numVariables
-    this->numTerms = factorial(numVariables) / (2 * factorial(numVariables - 2)) + 2 * numVariables;
     this->numVariables = numVariables;
-    this->equation = new double[numTerms];
-    for (int i = 0; i < numTerms; i++) {
-        equation[i] = 0;
-    }
 }
 
 Quadratic::~Quadratic()
@@ -39,64 +19,62 @@ Quadratic::~Quadratic()
     // nothing to do
 }
 
-/* The order of the terms is: var_i * var_j for i=0 to i=numVariables (for j=0 to j=numVariables),
- * then var_i for i=0 to i=numVariables.
- * Ex., for variables a,b,c, the order is: aa, ab, ac, bb, bc, cc, a, b, c.
- *   In this example, input index 2 (b) yields quadratic index 7 (b).
- */
-size_t Quadratic::quadraticIndexForInputIndex(int inputIndex)
-{
-    // the first term that is a single variable is after numVariables + (numVariables choose 2)
-    size_t firstIndex = factorial(numVariables) / (2 * factorial(numVariables - 2)) + numVariables;
-    return firstIndex + inputIndex;
-}
-
-/* We use the upper-right triangle of the matrix [a, b, c] * [a, b, c]^T
- *
- *   aa ab ac
- *   ba bb bc
- *   ca cb cc
- * Ex., the index for bc is 4.
- */
-size_t Quadratic::quadraticIndexForInputIndices(int inputIndex1, int inputIndex2)
-{
-    int smallTermIndex;
-    int largeTermIndex;
-    if (inputIndex1 > inputIndex2) {
-        largeTermIndex = inputIndex1;
-        smallTermIndex = inputIndex2;
-    } else {
-        largeTermIndex = inputIndex2;
-        smallTermIndex = inputIndex1;
-    }
-    size_t index = 0;
-    for (int i = 0; i < smallTermIndex; i++) {
-        index += numVariables - i;
-    }
-    index += (largeTermIndex - smallTermIndex);
-    return index;
-}
-
-// varIndex is the index of the variable in the input list.
-// Ex., for input variables a,b,c, the index of variable b is 1.
 double Quadratic::getCoeffForVar(int varIndex)
 {
-    return equation[quadraticIndexForInputIndex(varIndex)];
+    for (int i = 0; i < coefficients.size(); i++) {
+        QuadraticTerm term = coefficients[i];
+        if ((term.varIndex1 == varIndex && term.varIndex2 == -1) ||
+            (term.varIndex2 == varIndex && term.varIndex1 == -1)) {
+            return term.coefficientValue;
+        }
+    }
+    return 0;
 }
 
 double Quadratic::getCoeffForVars(int varIndex1, int varIndex2)
 {
-    return equation[quadraticIndexForInputIndices(varIndex1, varIndex2)];
+    for (int i = 0; i < coefficients.size(); i++) {
+        QuadraticTerm term = coefficients[i];
+        if ((term.varIndex1 == varIndex1 && term.varIndex2 == varIndex2) ||
+            (term.varIndex1 == varIndex2 && term.varIndex2 == varIndex1)) {
+            return term.coefficientValue;
+        }
+    }
+    return 0;
 }
 
 void Quadratic::setCoeffForVar(int varIndex, double value)
 {
-    equation[quadraticIndexForInputIndex(varIndex)] = value;
+    for (int i = 0; i < coefficients.size(); i++) {
+        QuadraticTerm& term = coefficients[i];
+        if ((term.varIndex1 == varIndex && term.varIndex2 == -1) ||
+            (term.varIndex2 == varIndex && term.varIndex1 == -1)) {
+            term.coefficientValue = value;
+            return;
+        }
+    }
+    QuadraticTerm term;
+    term.varIndex1 = varIndex;
+    term.varIndex2 = -1;
+    term.coefficientValue = value;
+    coefficients.push_back(term);
 }
 
 void Quadratic::setCoeffForVars(int varIndex1, int varIndex2, double value)
 {
-    equation[quadraticIndexForInputIndices(varIndex1, varIndex2)] = value;
+    for (int i = 0; i < coefficients.size(); i++) {
+        QuadraticTerm& term = coefficients[i];
+        if ((term.varIndex1 == varIndex1 && term.varIndex2 == varIndex2) ||
+            (term.varIndex1 == varIndex2 && term.varIndex1 == varIndex1)) {
+            term.coefficientValue = value;
+            return;
+        }
+    }
+    QuadraticTerm term;
+    term.varIndex1 = varIndex1;
+    term.varIndex2 = varIndex2;
+    term.coefficientValue = value;
+    coefficients.push_back(term);
 }
 
 /*
@@ -143,23 +121,79 @@ double *Quadratic::derivativeWithRespectToInputIndex(int inputIndex)
 }
 
 /*
- * Adds the given quadratic to the this quadratic. Assumes the quadratics are of the same number of
- * variables.
+ * Adds the given quadratic to the this quadratic.
  */
 void Quadratic::addQuadratic(Quadratic quad, double weight)
 {
-    for (int i = 0; i < numTerms; i++) {
-        equation[i] += weight * quad.equation[i];
+    vector<QuadraticTerm> newCoefficients;
+    // add the terms in both equations
+    for (int i = 0; i < coefficients.size(); i++) {
+        QuadraticTerm term = coefficients[i];
+        bool quadHasTerm = false;
+        for (int j = 0; j < quad.coefficients.size(); j++) {
+            QuadraticTerm quadTerm = quad.coefficients[j];
+            if ((quadTerm.varIndex1 == term.varIndex1 && quadTerm.varIndex2 == term.varIndex2) ||
+                (quadTerm.varIndex1 == term.varIndex2 && quadTerm.varIndex2 == term.varIndex1)) {
+                QuadraticTerm newTerm;
+                newTerm.varIndex1 = term.varIndex1;
+                newTerm.varIndex2 = term.varIndex2;
+                newTerm.coefficientValue = term.coefficientValue + weight * quadTerm.coefficientValue;
+                newCoefficients.push_back(newTerm);
+                quadHasTerm = true;
+            }
+        }
+        // add the terms in only this equation
+        if (!quadHasTerm) {
+            QuadraticTerm newTerm;
+            newTerm.varIndex1 = term.varIndex1;
+            newTerm.varIndex2 = term.varIndex2;
+            newTerm.coefficientValue = term.coefficientValue;
+            newCoefficients.push_back(newTerm);
+        }
     }
+    // add the terms in only the other quad equation
+    for (int i = 0; i < quad.coefficients.size(); i++) {
+        QuadraticTerm quadTerm = quad.coefficients[i];
+        bool hasQuadTerm = false;
+        for (int j = 0; j < coefficients.size(); j++) {
+            QuadraticTerm term = coefficients[j];
+            if ((quadTerm.varIndex1 == term.varIndex1 && quadTerm.varIndex2 == term.varIndex2) ||
+                (quadTerm.varIndex1 == term.varIndex2 && quadTerm.varIndex2 == term.varIndex1)) {
+                hasQuadTerm = true;
+            }
+        }
+        // not in this equation, only in the other quad equation
+        if (!hasQuadTerm) {
+            QuadraticTerm newTerm;
+            newTerm.varIndex1 = quadTerm.varIndex1;
+            newTerm.varIndex2 = quadTerm.varIndex2;
+            newTerm.coefficientValue = weight * quadTerm.coefficientValue;
+            newCoefficients.push_back(newTerm);
+        }
+    }
+    
+    // set our coefficients to the new coefficients
+    coefficients = newCoefficients;
 }
 
 /*
  * Prints out the coefficients of the variables in the equation (to cerr).
+ * Ex., the equation 7a^2 + 2ab - 3b^2 + 5a is 7:0*0 2:0*1 -3:1*1 5:0.
  */
 void Quadratic::printEquation()
 {
-    for (int i = 0; i < numTerms; i++) {
-        std::cerr << equation[i] << " ";
+    for (int i = 0; i < coefficients.size(); i++) {
+        QuadraticTerm term = coefficients[i];
+        if (term.varIndex1 != -1 && term.varIndex2 != -1) {
+            cerr << term.coefficientValue << ":" << term.varIndex1 << "*" << term.varIndex2 << " ";
+        } else if (term.varIndex1 != -1 && term.varIndex2 == -1) {
+            cerr << term.coefficientValue << ":" << term.varIndex1 << " ";
+        } else if (term.varIndex2 != -1 && term.varIndex1 == -1) {
+            cerr << term.coefficientValue << ":" << term.varIndex2 << " ";
+        } else {
+            // this case should never happen (because we don't include constant terms)
+            cerr << term.coefficientValue << ":: ";
+        }
     }
-    std::cerr << std::endl;
+    cerr << endl;
 }

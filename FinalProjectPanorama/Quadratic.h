@@ -10,6 +10,17 @@
 #define __FinalProjectPanorama__Quadratic__
 
 #include <stdio.h>
+#include <vector>
+
+using namespace std;
+
+struct QuadraticTerm
+{
+    // -1 for either index indicates the term is only in one variable (degree 1)
+    int varIndex1;
+    int varIndex2;
+    double coefficientValue;
+};
 
 // Note: This representation of a quadratic equation does not allow for constant terms.
 // Also, this class is hard-coded to represent quadratic equations with double coefficients.
@@ -26,9 +37,8 @@ public:
     void addQuadratic(Quadratic quad, double weight);
     void printEquation();
 private:
-    double *equation; // the coefficients for each term
+    vector<QuadraticTerm> coefficients;
     int numVariables; // the number of variables in the input domain
-    size_t numTerms; // the number of terms in the quadratic; no constants
     size_t quadraticIndexForInputIndex(int inputIndex);
     size_t quadraticIndexForInputIndices(int inputIndex1, int inputIndex2);
     double *derivativeWithRespectToInputIndex(int inputIndex);
