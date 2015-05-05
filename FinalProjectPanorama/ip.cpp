@@ -852,9 +852,33 @@ int variableIndexForCoordDimen(int vertexX, int vertexY, bool y, size_t numX)
 /*
  * Returns the quadratic terms for the shape energy for the given mesh.
  */
-double *ip_energy_shape(vector<vector<CoordinateDouble>> inputMesh)
+Quadratic ip_energy_shape(vector<vector<CoordinateDouble>> mesh)
 {
-    return nullptr;
+    size_t numMeshX = mesh.size();
+    size_t numMeshY = mesh[0].size();
+    
+    int numVariables = (int) (numMeshX * numMeshY * 2);
+    Quadratic energyQuadratic = Quadratic(numVariables);
+    
+    // FOR NOW, make it quadratic about each vertex's original position in the mesh
+    // (z_i - (z_i^))^2 for all vertices
+    //  = (z_i)^2 - 2*(z_i)*(z_i^) + (z_i^)^2
+    for (int i = 0; i < numMeshX; i++) {
+        for (int j = 0; j < numMeshY; j++) {
+            CoordinateDouble coord = mesh[i][j];
+            //x
+            int xVarIndex = variableIndexForCoordDimen(i, j, false, numMeshX);
+            energyQuadratic.setCoeffForVars(xVarIndex, xVarIndex, 1);
+            energyQuadratic.setCoeffForVar(xVarIndex, -2 * coord.x);
+            //y
+            int yVarIndex = variableIndexForCoordDimen(i, j, true, numMeshX);
+            energyQuadratic.setCoeffForVars(yVarIndex, yVarIndex, 1);
+            energyQuadratic.setCoeffForVar(yVarIndex, -2 * coord.y);
+        }
+    }
+    
+    
+    return energyQuadratic;
     
 //    size_t numMeshX = inputMesh.size();
 //    size_t numMeshY = inputMesh[0].size();
@@ -982,7 +1006,7 @@ double *ip_energy_shape(vector<vector<CoordinateDouble>> inputMesh)
 //            // add ((aq*(aq^T*aq)^(-1)*aq^T-I)*vq)^2
 //            vector<vector<double>> aqt = mattrans(aq);
 //            vector<vector<double>> aqtXaq = matmul(aqt, aq);
-//            vector<vector<double>> inv = matinv(aqtXaq);
+//            vector<vector<double>> inv = matinv(aqtXaq); matinvMinor
 //            vector<vector<double>> prdr = matmul(inv, aqt);
 //            vector<vector<double>> prdl = matmul(aq, prdr);
 //            vector<vector<double>> iden = matiden(8);
@@ -1438,7 +1462,7 @@ double *ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> mesh,
 //                
 //                // C = R*eHat*(eHat^T * eHat)^(-1)*eHat^T*R^T-I
 //                vector<vector<double>> ete = matmul(mattrans(eHat), eHat);
-//                vector<vector<double>> eteInv = matinv(ete);
+//                vector<vector<double>> eteInv = matinv(ete); matinvMinor
 //                vector<vector<double>> prdr = matmul(eteInv, mattrans(eHat));
 //                vector<vector<double>> prdrr = matmul(prdr, mattrans(r));
 //                vector<vector<double>> prdl = matmul(eHat, prdrr);
@@ -1474,11 +1498,9 @@ Quadratic ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> mesh
     Quadratic energyQuadratic = Quadratic(numVariables);
     
     // Add shape energy
-//    double *shapeEnergy = ip_energy_shape(mesh);
-//    double esWeight = 1;
-//    for (int i = 0; i < numTermsInQuadratic; i++) {
-//        energyQuadraticCoefficients[i] += esWeight * shapeEnergy[i];
-//    }
+    Quadratic shapeEnergyQuadratic = ip_energy_shape(mesh);
+    double esWeight = 1;
+    energyQuadratic.addQuadratic(shapeEnergyQuadratic, esWeight);
     
     // Add weighted line energy
 //    double elWeight = 100;
@@ -1491,9 +1513,6 @@ Quadratic ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> mesh
     Quadratic boundaryEnergyQuadratic = ip_energy_boundary(srcImage, mesh);
     double ebWeight = INFT;
     energyQuadratic.addQuadratic(boundaryEnergyQuadratic, ebWeight);
-//    for (int i = 0; i < numTermsInQuadratic; i++) {
-//        energyQuadraticCoefficients[i] += ebWeight * boundaryEnergy[i];
-//    }
     
     return energyQuadratic;
 }
@@ -1524,14 +1543,16 @@ Image* ip_rectangle(Image* srcImage)
 {
     // === Local warp to get original mesh ===
     
+    cerr << " Starting local warp" << endl;
+    
     // First, use local warp to get a rectangular displacement map
     vector<vector<Coordinate>> displacementMap = ip_local_warp_displacement(srcImage);
     
     // Next, make a mesh on the rectangular image..
     int width = srcImage->getWidth();
     int height = srcImage->getHeight();
-    int numMeshX = 2; 1; // should be 20
-    int numMeshY = 2; 1; // should be 20
+    int numMeshX = 20;
+    int numMeshY = 20;
     double widthPerMesh = double(width-1) / (numMeshX - 1);
     double heightPerMesh = double(height-1) / (numMeshY - 1);
     vector<vector<CoordinateDouble>> mesh;
@@ -1556,10 +1577,15 @@ Image* ip_rectangle(Image* srcImage)
         }
     }
     
+    cerr << " Finished local warp." << endl;
+    
     // === End local warp to get original mesh ===
     
     
     // === Optimize mesh ===
+    
+    cerr << " Starting mesh optimization." << endl;
+    
     // Get equation representing the energy of an output mesh, then optimize it with math.
     
     // TO-DO: Something with this theta
@@ -1593,7 +1619,7 @@ Image* ip_rectangle(Image* srcImage)
         squareMatrix.push_back(row);
     }
     // Now we can solve the system of linear equations.
-    vector<vector<double>>inverseSquareMatrix = matinv(squareMatrix);
+    vector<vector<double>>inverseSquareMatrix = matinvGJ(squareMatrix);
     vector<vector<double>>solutionVariables = matmul(inverseSquareMatrix, colVector);
     // Finally, we can convert the list of variables to coordinates.
     vector<vector<CoordinateDouble>> outputMesh;
@@ -1610,8 +1636,9 @@ Image* ip_rectangle(Image* srcImage)
         outputMesh.push_back(outputMeshRow);
     }
     
-    // === End optimize mesh ===
+    cerr << " Finished mesh optimization." << endl;
     
+    // === End optimize mesh ===
     
     // Use optimized mesh to interpolate displacement of every pixel; fill in few blank pixels
     

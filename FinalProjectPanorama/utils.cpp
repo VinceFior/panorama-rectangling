@@ -10,13 +10,20 @@
 #include <math.h>
 //#include <iostream>
 
-// methods taken from https://chi3x10.wordpress.com/2008/05/28/calculate-matrix-inversion-in-c/ ,
-//  with reference from http://hullooo.blogspot.com/2011/02/matrix-inversion-by-gauss-jordan.html
+// Some methods taken from https://chi3x10.wordpress.com/2008/05/28/calculate-matrix-inversion-in-c/ ,
+//  with some reference from http://hullooo.blogspot.com/2011/02/matrix-inversion-by-gauss-jordan.html .
 
 /*
  * The given matrix must be square.
+ *
+ * The Gauss-Jordan inverse function is much, much faster for large matrices, but it might not
+ * work if the matrix isn't in a certain form; however, if the matrix has non-zero diagonal elements,
+ * the GJ method should work fine.
+ *
+ * The other method - the minor inverse function - is (probably) more robust but much, much slower
+ * for large matrices.
  */
-vector<vector<double>> matinv(vector<vector<double>> m)
+vector<vector<double>> matinv(vector<vector<double>> m, bool useGJ)
 {
     int order = (int) m.size();
     
@@ -33,7 +40,11 @@ vector<vector<double>> matinv(vector<vector<double>> m)
             A[i][j] = m[i][j];
         }
     }
-    MatrixInversion(A, order, Y);
+    if (useGJ) {
+        MatrixInversionGJ(A, order, Y);
+    } else {
+        MatrixInversionMinor(A, order, Y);
+    }
     vector<vector<double>> result;
     for (int i = 0; i < order; i++) {
         vector<double> row;
@@ -45,9 +56,19 @@ vector<vector<double>> matinv(vector<vector<double>> m)
     return result;
 }
 
+vector<vector<double>> matinvMinor(vector<vector<double>> matrix)
+{
+    return matinv(matrix, false);
+}
+
+vector<vector<double>> matinvGJ(vector<vector<double>> matrix)
+{
+    return matinv(matrix, true);
+}
+
 // Matrix inversion, using minors.
 // The result is put in Y
-void MatrixInversion(double **A, int order, double **Y)
+void MatrixInversionMinor(double **A, int order, double **Y)
 {
     // get the determinant of a
     double det = 1.0/CalcDeterminant(A,order);
@@ -142,9 +163,13 @@ double CalcDeterminant( double **mat, int order)
 // The result is put in Y.
 void MatrixInversionGJ(double **A, int order, double **Y)
 {
-    double augmentedmatrix[order][2*order] ;
+    double **augmentedmatrix;
+    augmentedmatrix = new double*[order];
+    for (int i = 0; i < order; i++) {
+        augmentedmatrix[i] = new double[2 * order];
+    }
     
-    // store the augmented matrix as a matrix of dimensions (order)x(2*order) in 2D array
+    // store the augmented matrix as a matrix of dimensions (order)x(2*order) in a 2D array
     for (int i = 0; i < order; i++) {
         for (int j = 0; j < order; j++) {
             augmentedmatrix[i][j] = A[i][j];

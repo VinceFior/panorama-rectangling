@@ -13,8 +13,9 @@
 #include <vector>
 using namespace std;
 
-vector<vector<double>> matinv(vector<vector<double>> m);
-void MatrixInversion(double **A, int order, double **Y);
+vector<vector<double>> matinvMinor(vector<vector<double>> matrix);
+vector<vector<double>> matinvGJ(vector<vector<double>> matrix);
+void MatrixInversionMinor(double **A, int order, double **Y);
 void MatrixInversionGJ(double **A, int order, double **Y);
 int GetMinor(double **src, double **dest, int row, int col, int order);
 double CalcDeterminant( double **mat, int order);
