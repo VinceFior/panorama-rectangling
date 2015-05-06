@@ -34,6 +34,16 @@ struct Coordinate
 {
     int x;
     int y;
+    
+    bool operator==(const Coordinate& rhs) const
+    {
+        return (x == rhs.x && y == rhs.y);
+    }
+    
+    bool operator<(const Coordinate& rhs) const
+    {
+        return (x < rhs.x);
+    }
 };
 
 struct CoordinateDouble
@@ -48,6 +58,12 @@ struct LineSegment
     double y1;
     double x2;
     double y2;
+};
+
+struct BilinearWeights
+{
+    double s;
+    double t;
 };
 
 /*

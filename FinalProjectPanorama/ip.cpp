@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <set>
+#include <deque>
 #include "utils.h"
 #include "lsd.h"
 #include "Quadratic.h"
@@ -203,6 +205,14 @@ Image* ip_seam_energy(Image* src)
 }
 
 /*
+ * Determines whether the given coordinate is along the edge of the given image.
+ */
+bool ip_is_edge(Coordinate coord, Image* src)
+{
+    return (coord.x == 0 || coord.x == src->getWidth() - 1 || coord.y == 0 || coord.y == src->getHeight() - 1);
+}
+
+/*
  * Determines whether the given pixel is 'transparent'.
  */
 bool ip_is_transparent(Pixel pixel) {
@@ -211,27 +221,81 @@ bool ip_is_transparent(Pixel pixel) {
 
 /*
  * Determines whether the given pixel is part of the 'transparent' border.
+ * Does so by determining whether there is a path from the transparent pixel through other such
+ * pixels to the edge of the image, using a BFS.
  */
 bool ip_is_border(Image* src, int x, int y) {
     Pixel pixel = src->getPixel(x, y);
+    // in any case, the given pixel must be transparent
     if (!ip_is_transparent(pixel)) {
         return false;
     }
     
+    int width = src->getWidth();
+    int height = src->getHeight();
     
-    1;return true; //TODO: BFS
-    // do a BFS to reach a border pixel
+    Coordinate startCoord;
+    startCoord.x = x;
+    startCoord.y = y;
+    set<Coordinate> expandedPixels;
+    deque<Coordinate> fringe;
+    fringe.push_back(startCoord);
+    while (fringe.size() != 0) {
+        Coordinate currentPixel = fringe.front();
+        Pixel currentPixelPx = src->getPixel(currentPixel.x, currentPixel.y);
+        fringe.pop_front();
+        if (ip_is_transparent(currentPixelPx) && ip_is_edge(currentPixel, src)) {
+            return true;
+        }
+        bool currentPixelInExpandedPixels = expandedPixels.count(currentPixel);
+        if (!currentPixelInExpandedPixels) {
+            expandedPixels.insert(currentPixel);
+            // Note: This BFS currently does not allow for diagonals
+            // Possible todo: allow diagonals
+            int upY = currentPixel.y - 1;
+            int downY = currentPixel.y + 1;
+            int leftX = currentPixel.x - 1;
+            int rightX = currentPixel.x + 1;
+            if (upY >= 0) {
+                Pixel upPixel = src->getPixel(x, upY);
+                if (ip_is_transparent(upPixel)){
+                    Coordinate upCoord;
+                    upCoord.x = x;
+                    upCoord.y = upY;
+                    fringe.push_back(upCoord);
+                }
+            }
+            if (downY < height) {
+                Pixel downPixel = src->getPixel(x, downY);
+                if (ip_is_transparent(downPixel)){
+                    Coordinate downCoord;
+                    downCoord.x = x;
+                    downCoord.y = downY;
+                    fringe.push_back(downCoord);
+                }
+            }
+            if (leftX >= 0) {
+                Pixel leftPixel = src->getPixel(leftX, y);
+                if (ip_is_transparent(leftPixel)){
+                    Coordinate leftCoord;
+                    leftCoord.x = leftX;
+                    leftCoord.y = y;
+                    fringe.push_back(leftCoord);
+                }
+            }
+            if (rightX < width) {
+                Pixel rightPixel = src->getPixel(rightX, y);
+                if (ip_is_transparent(rightPixel)){
+                    Coordinate rightCoord;
+                    rightCoord.x = rightX;
+                    rightCoord.y = y;
+                    fringe.push_back(rightCoord);
+                }
+            }
+        }
+    }
     
-//    expandedPixels = set()
-//    fringe = util.Queue()
-//    fringe.push(startPos)
-//    while not fringe.isEmpty():
-//        offPixel = fringe.pop()
-//        if offPixel not in expandedPixels:
-//            expandedPixels.add(offPixel)
-//            for neighbor in getOffNeighbors(datum, offPixel):
-//                fringe.push(neighbor)
-//                return expandedPixels
+    return false;
 }
 
 /*
@@ -1545,6 +1609,393 @@ Image* ip_draw_vertices(Image* src, vector<vector<CoordinateDouble>> mesh)
 }
 
 /*
+ * Given a point and the upper-left vertex of a mesh, computes the bilinear weights of the point.
+ * The right vertices have weight s, and the bottom vertices have weight t.
+ * Guidance from http://www.ahinson.com/algorithms_general/Sections/InterpolationRegression/InterpolationIrregularBilinear.pdf .
+ */
+BilinearWeights get_bilinear_weights(CoordinateDouble point, Coordinate upperLeftIndices, vector<vector<CoordinateDouble>> mesh)
+{
+    CoordinateDouble p1 = mesh[upperLeftIndices.y][upperLeftIndices.x]; // topLeft
+    CoordinateDouble p2 = mesh[upperLeftIndices.y][upperLeftIndices.x+1]; // topRight
+    CoordinateDouble p3 = mesh[upperLeftIndices.y+1][upperLeftIndices.x]; // bottomLeft
+    CoordinateDouble p4 = mesh[upperLeftIndices.y+1][upperLeftIndices.x+1]; // bottomRight
+    
+    double slopeTop = (p2.y - p1.y) / (p2.x - p1.x);
+    double slopeBottom = (p4.y - p3.y) / (p4.x - p3.x);
+    double slopeLeft = (p1.y - p3.y) / (p1.x - p3.x);
+    double slopeRight = (p2.y - p4.y) / (p2.x - p4.x);
+    
+    double quadraticEpsilon = 0.01;
+    
+    if (slopeTop == slopeBottom && slopeLeft == slopeRight) {
+        
+        // method 3
+        vector<vector<double>> squareMat;
+        vector<double> row1;
+        row1.push_back(p2.x - p1.x);
+        row1.push_back(p3.x - p1.x);
+        squareMat.push_back(row1);
+        vector<double> row2;
+        row2.push_back(p2.y - p1.y);
+        row2.push_back(p3.y - p1.y);
+        squareMat.push_back(row2);
+        
+        vector<vector<double>> vectorMat;
+        vector<double>vrow1;
+        vrow1.push_back(point.x - p1.x);
+        vectorMat.push_back(vrow1);
+        vector<double>vrow2;
+        vrow2.push_back(point.y - p1.y);
+        vectorMat.push_back(vrow2);
+        
+        vector<vector<double>> squareMatInv = matinvGJ(squareMat);
+        vector<vector<double>> solution = matmul(squareMatInv, vectorMat);
+        
+        BilinearWeights weights;
+        weights.s = solution[0][0];
+        weights.t = solution[1][0];
+        return weights;
+        
+    } else if (slopeLeft == slopeRight) {
+        
+        // method 2
+        double a = (p2.x - p1.x)*(p4.y - p3.y) - (p2.y - p1.y)*(p4.x - p3.x);
+        double b = point.y*((p4.x-p3.x)-(p2.x-p1.x))-point.x*((p4.y-p3.y)-(p2.y-p1.y))+p1.x*(p4.y-p3.y)-p1.y*(p4.x-p3.x)+(p2.x-p1.x)*(p3.y)-(p2.y-p1.y)*(p3.x);
+        double c = point.y*(p3.x-p1.x)-point.x*(p3.y-p1.y)+p1.x*p3.y-p3.x*p1.y;
+        
+        double s1 = (-1 * b + sqrt(b*b - 4*a*c)) / (2 * a);
+        double s2 = (-1 * b - sqrt(b*b - 4*a*c)) / (2 * a);
+        double s;
+        if (s1 >= 0 && s1 <= 1) {
+            s = s1;
+        } else if (s2 >= 0 && s2 <= 1) {
+            s = s2;
+        } else {
+            
+            if ((s1 > 1 && s1 - quadraticEpsilon < 1) ||
+                (s2 > 1 && s2 - quadraticEpsilon < 1)) {
+                s = 1;
+            } else if ((s1 < 0 && s1 + quadraticEpsilon > 0) ||
+                       (s2 < 0 && s2 + quadraticEpsilon > 0)) {
+                s = 0;
+            } else {
+                // this case should not happen
+                cerr << "  Could not interpolate s weight for coordinate (" << point.x << "," << point.x << ")." << endl;
+                s = 0;
+            }
+        }
+        
+        double val = (p3.y + (p4.y - p3.y)*s - p1.y - (p2.y - p1.y)*s);
+        double t = (point.y - p1.y - (p2.y - p1.y)*s) / val;
+        double valEpsilon = 0.1; // 0.1 and 0.01 appear identical
+        if (fabs(val) < valEpsilon) {
+            // Py ~= Cy because Dy - Cy ~= 0. So, instead of interpolating with y, we use x.
+            t = (point.x - p1.x - (p2.x - p1.x)*s) / (p3.x + (p4.x - p3.x)*s - p1.x - (p2.x - p1.x)*s);
+        }
+        
+        BilinearWeights weights;
+        weights.s = s;
+        weights.t = t;
+        return weights;
+        
+    } else {
+        
+        // method 1
+        double a = (p3.x - p1.x)*(p4.y - p2.y) - (p3.y - p1.y)*(p4.x - p2.x);
+        double b = point.y*((p4.x - p2.x) - (p3.x - p1.x)) - point.x*((p4.y - p2.y) - (p3.y - p1.y)) + (p3.x - p1.x)*(p2.y) - (p3.y - p1.y)*(p2.x) + (p1.x)*(p4.y - p2.y) - (p1.y)*(p4.x - p2.x);
+        double c = point.y*(p2.x - p1.x) - (point.x)*(p2.y - p1.y) + p1.x*p2.y - p2.x*p1.y;
+        
+        double t1 = (-1 * b + sqrt(b*b - 4*a*c)) / (2 * a);
+        double t2 = (-1 * b - sqrt(b*b - 4*a*c)) / (2 * a);
+        double t;
+        if (t1 >= 0 && t1 <= 1) {
+            t = t1;
+        } else if (t2 >= 0 && t2 <= 1) {
+            t = t2;
+        } else {
+            if ((t1 > 1 && t1 - quadraticEpsilon < 1) ||
+                (t2 > 1 && t2 - quadraticEpsilon < 1)) {
+                t = 1;
+            } else if ((t1 < 0 && t1 + quadraticEpsilon > 0) ||
+                       (t2 < 0 && t2 + quadraticEpsilon > 0)) {
+                t = 0;
+            } else {
+                // this case should not happen
+                cerr << "  Could not interpolate t weight for coordinate (" << point.x << "," << point.x << ")." << endl;
+                t = 0;
+            }
+        }
+        
+        double val = (p2.y + (p4.y - p2.y)*t - p1.y - (p3.y - p1.y)*t);
+        double s = (point.y - p1.y - (p3.y - p1.y)*t) / val;
+        double valEpsilon = 0.1; // 0.1 and 0.01 appear identical
+        if (fabs(val) < valEpsilon) {
+            // Py ~= Ay because By - Ay ~= 0. So, instead of interpolating with y, we use x.
+            s = (point.x - p1.x - (p3.x - p1.x)*t) / (p2.x + (p4.x - p2.x)*t - p1.x - (p3.x - p1.x)*t);
+        }
+        
+        BilinearWeights weights;
+        weights.s = clamp(s, 0, 1);
+        weights.t = clamp(t, 0, 1);
+        return weights;
+    }
+}
+
+/*
+ * Returns the upper-left vertex of the quad that contains the point in the mesh.
+ */
+Coordinate get_quad_indices(CoordinateDouble point, vector<vector<CoordinateDouble>> mesh)
+{
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
+    Coordinate quadIndices;
+    for (int i = 0; i < numMeshY - 1; i++) {
+        for (int j = 0; j < numMeshX - 1; j++) {
+            CoordinateDouble topLeft = mesh[i][j];
+            CoordinateDouble topRight = mesh[i][j+1];
+            CoordinateDouble bottomLeft = mesh[i+1][j];
+            CoordinateDouble bottomRight = mesh[i+1][j+1];
+            if (is_in_quad(point, topLeft, topRight, bottomLeft, bottomRight)){
+                quadIndices.x = j;
+                quadIndices.y = i;
+                return quadIndices;
+            }
+        }
+    }
+    quadIndices.x = -1;
+    quadIndices.y = -1;
+    return quadIndices;
+}
+
+/*
+ * Uses the bilinear weights to compute the corresponding point in the appropriate quadrilateral
+ * in the given mesh.
+ */
+CoordinateDouble get_sample_location(BilinearWeights weights, Coordinate upperLeftIndices,
+                                     vector<vector<CoordinateDouble>> mesh)
+{
+    
+    CoordinateDouble p1 = mesh[upperLeftIndices.y][upperLeftIndices.x]; // topLeft
+    CoordinateDouble p2 = mesh[upperLeftIndices.y][upperLeftIndices.x+1]; // topRight
+    CoordinateDouble p3 = mesh[upperLeftIndices.y+1][upperLeftIndices.x]; // bottomLeft
+    CoordinateDouble p4 = mesh[upperLeftIndices.y+1][upperLeftIndices.x+1]; // bottomRight
+    
+    double s = weights.s;
+    double t = weights.t;
+    double pointX;
+    double pointY;
+    pointX = p1.x*(1 - s)*(1 - t) + p2.x*(s)*(1 - t) + p3.x*(1 - s)*(t) + p4.x*(s)*(t);
+    pointY = p1.y*(1 - s)*(1 - t) + p2.y*(s)*(1 - t) + p3.y*(1 - s)*(t) + p4.y*(s)*(t);
+    CoordinateDouble samplePoint;
+    samplePoint.x = pointX;
+    samplePoint.y = pointY;
+    return samplePoint;
+}
+
+/*
+ * Utility method for checking if a vector contains a coordinate. A bit over-specialized and
+ * unnecessary.
+ */
+bool vector_contains_coordinate(vector<Coordinate> vect, Coordinate coord)
+{
+    for (int i = 0; i < vect.size(); i++) {
+        Coordinate vectCoord = vect[i];
+        if (vectCoord.x == coord.x && vectCoord.y == coord.y) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * Given an image with a vector of unfilled pixels, returns the filled pixel closest to the given
+ * start coordinate.
+ */
+Pixel ip_closest_pixel(Image* src, vector<Coordinate> unfilledPixels, Coordinate startCoord)
+{
+    int width = src->getWidth();
+    int height = src->getHeight();
+    int x = startCoord.x;
+    int y = startCoord.y;
+    
+    Coordinate point;
+    point.x = x;
+    point.y = y;
+    int maxSearch = 100;
+    for (int d = 0; d < maxSearch; d++) {
+        int upY = point.y - d;
+        Coordinate upPoint;
+        upPoint.x = point.x;
+        upPoint.y = upY;
+
+        int downY = point.y + d;
+        Coordinate downPoint;
+        downPoint.x = point.x;
+        downPoint.y = downY;
+
+        int rightX = point.x + d;
+        Coordinate rightPoint;
+        rightPoint.x = rightX;
+        rightPoint.y = point.y;
+
+        int leftX = point.x - d;
+        Coordinate leftPoint;
+        leftPoint.x = leftX;
+        leftPoint.y = point.y;
+
+        if (upY >= 0 && !vector_contains_coordinate(unfilledPixels, upPoint)) {
+            return src->getPixel(point.x, upY);
+        }
+        if (leftX >= 0 && !vector_contains_coordinate(unfilledPixels, leftPoint)) {
+            return src->getPixel(leftX, point.y);
+        }
+        if (downY < height && !vector_contains_coordinate(unfilledPixels, downPoint)) {
+            return src->getPixel(point.x, downY);
+        }
+        if (rightX < width && !vector_contains_coordinate(unfilledPixels, rightPoint)) {
+            return src->getPixel(rightX, point.y);
+        }
+    }
+    
+    // TODO: use this BFS (for some reason it misses a couple pixels on the top edge)
+//    set<Coordinate> expandedPixels;
+//    deque<Coordinate> fringe;
+//    fringe.push_back(startCoord);
+//    while (fringe.size() != 0) {
+//        Coordinate currentPixel = fringe.front();
+//        fringe.pop_front();
+//        if (!vector_contains_coordinate(unfilledPixels, currentPixel)) {
+//            return src->getPixel(currentPixel.x, currentPixel.y);
+//        }
+//        bool currentPixelInExpandedPixels = expandedPixels.count(currentPixel);
+//        if (!currentPixelInExpandedPixels) {
+//            expandedPixels.insert(currentPixel);
+//            // Note: This BFS currently does not allow for diagonals
+//            // Possible todo: allow diagonals
+//            int upY = currentPixel.y - 1;
+//            int downY = currentPixel.y + 1;
+//            int leftX = currentPixel.x - 1;
+//            int rightX = currentPixel.x + 1;
+//            if (upY >= 0) {
+//                Coordinate upCoord;
+//                upCoord.x = x;
+//                upCoord.y = upY;
+//                fringe.push_back(upCoord);
+//            }
+//            if (downY < height) {
+//                Coordinate downCoord;
+//                downCoord.x = x;
+//                downCoord.y = downY;
+//                fringe.push_back(downCoord);
+//            }
+//            if (leftX >= 0) {
+//                Coordinate leftCoord;
+//                leftCoord.x = leftX;
+//                leftCoord.y = y;
+//                fringe.push_back(leftCoord);
+//            }
+//            if (rightX < width) {
+//                Pixel rightPixel = src->getPixel(rightX, y);
+//                Coordinate rightCoord;
+//                rightCoord.x = rightX;
+//                rightCoord.y = y;
+//                fringe.push_back(rightCoord);
+//            }
+//        }
+//    }
+    
+    // this case should never happen (if the image is reasonable)
+    return Pixel(1,1,1);
+}
+
+/*
+ *
+ */
+Image* ip_fill_missing_pixels(Image* srcImage, vector<Coordinate> unfilledPixels)
+{
+    Image* output = new Image (*srcImage);
+    
+    // fill in missing pixels
+    for (int i = 0; i < unfilledPixels.size(); i++) {
+        Coordinate point = unfilledPixels[i];
+        
+        Pixel samplePixel = ip_closest_pixel(srcImage, unfilledPixels, point);
+        output->setPixel(point.x, point.y, samplePixel);
+        
+        
+    }
+    
+    return output;
+}
+
+/*
+ * Given an original mesh on a source image (so the original mesh is warped backward from a 
+ * rectangle to fit the irregular source image) and an optimized mesh (which has been optimized
+ * to fit a rectangle), this function returns the image interpolated in the optimized mesh
+ * based on the original mesh.
+ */
+Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> originalMesh,
+                            vector<vector<CoordinateDouble>> optimizedMesh)
+{
+    int width = srcImage->getWidth();
+    int height = srcImage->getHeight();
+    Image* output = new Image (width, height);
+    vector<Coordinate> unfilledPixels;
+    Pixel whitePixel = Pixel(1,1,1);
+    // get samples
+    for (int x = 0; x < width; x++) {
+        for (int y = 0; y < height; y++) {
+            CoordinateDouble point;
+            point.x = x;
+            point.y = y;
+            // get quad
+            Coordinate quadUpperLeftIndices = get_quad_indices(point, optimizedMesh);
+            if (quadUpperLeftIndices.x == -1 || quadUpperLeftIndices.y == -1) {
+                if (!(x == 0 || x == width - 1 || y == 0 || y == height - 1)) {
+                    // boundary misses are so common that we only write an error for other pixels
+                    cerr << "  No quad for (" << x << "," << y << ")" << endl;
+                }
+                output->setPixel(x, y, whitePixel);
+                Coordinate unfilledPoint;
+                unfilledPoint.x = x;
+                unfilledPoint.y = y;
+                unfilledPixels.push_back(unfilledPoint);
+                continue;
+            }
+            // get weights
+            BilinearWeights weights = get_bilinear_weights(point, quadUpperLeftIndices, optimizedMesh);
+            // get sample location
+            CoordinateDouble sampleLocation = get_sample_location(weights, quadUpperLeftIndices, originalMesh);
+            if (sampleLocation.x < 0 || sampleLocation.x > width - 1 || sampleLocation.y < 0 || sampleLocation.y > height - 1) {
+                cerr << "  Bad pos for (" << x << "," << y << "): (" << sampleLocation.x << "," << sampleLocation.y << ")" << endl;
+                output->setPixel(x, y, whitePixel);
+                Coordinate unfilledPoint;
+                unfilledPoint.x = x;
+                unfilledPoint.y = y;
+                unfilledPixels.push_back(unfilledPoint);
+                continue;
+            }
+            // set pixel from sample location (if non-border sample location)
+            Pixel samplePixel = srcImage->getPixel(sampleLocation.x, sampleLocation.y);
+            if (ip_is_border(srcImage, sampleLocation.x, sampleLocation.y)) {
+                //cerr << "  Border pixel for (" << x << "," << y << "): (" << sampleLocation.x << "," << sampleLocation.y << ")" << endl;
+                output->setPixel(x, y, whitePixel);
+                Coordinate unfilledPoint;
+                unfilledPoint.x = x;
+                unfilledPoint.y = y;
+                unfilledPixels.push_back(unfilledPoint);
+                continue;
+            }
+            output->setPixel(x, y, samplePixel);
+        }
+    }
+    
+    output = ip_fill_missing_pixels(output, unfilledPixels);
+    
+    return output;
+}
+
+/*
  * Fits the given src image to its rectangular boundaries, using white as transparent.
  * This is the main method of the project.
  */
@@ -1552,7 +2003,7 @@ Image* ip_rectangle(Image* srcImage)
 {
     // === Local warp to get original mesh ===
     
-    cerr << " Starting local warp" << endl;
+    cerr << " Starting local warp." << endl;
     
     // First, use local warp to get a rectangular displacement map
     vector<vector<Coordinate>> displacementMap = ip_local_warp_displacement(srcImage);
@@ -1667,11 +2118,17 @@ Image* ip_rectangle(Image* srcImage)
 //        cerr << endl;
 //    }
     
-    return ip_draw_vertices(srcImage, outputMesh);
-    
     // === End optimize mesh ===
     
     // Use optimized mesh to interpolate displacement of every pixel; fill in few blank pixels
+    
+    cerr << " Starting image interpolation." << endl;
+    
+    Image* finalImage = ip_interpolate_image(srcImage, mesh, outputMesh);
+    
+    cerr << " Finished image interpolation." << endl;
+    
+    return finalImage;
     
     // Scale the final mesh and re-interpolate to fix stretching
     
