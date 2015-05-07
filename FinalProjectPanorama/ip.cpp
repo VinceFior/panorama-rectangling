@@ -1680,7 +1680,7 @@ BilinearWeights get_bilinear_weights(CoordinateDouble point, Coordinate upperLef
                 s = 0;
             } else {
                 // this case should not happen
-                cerr << "  Could not interpolate s weight for coordinate (" << point.x << "," << point.x << ")." << endl;
+                cerr << "  Could not interpolate s weight for coordinate (" << point.x << "," << point.y << ")." << endl;
                 s = 0;
             }
         }
@@ -1721,7 +1721,7 @@ BilinearWeights get_bilinear_weights(CoordinateDouble point, Coordinate upperLef
                 t = 0;
             } else {
                 // this case should not happen
-                cerr << "  Could not interpolate t weight for coordinate (" << point.x << "," << point.x << ")." << endl;
+                cerr << "  Could not interpolate t weight for coordinate (" << point.x << "," << point.y << ")." << endl;
                 t = 0;
             }
         }
@@ -1909,7 +1909,8 @@ Pixel ip_closest_pixel(Image* src, vector<Coordinate> unfilledPixels, Coordinate
 }
 
 /*
- *
+ * Given an image with a vector of coordinates indicating the pixels that need to be filled,
+ * sets the unfilled pixels with their nearest filled neighbor in the image.
  */
 Image* ip_fill_missing_pixels(Image* srcImage, vector<Coordinate> unfilledPixels)
 {
@@ -1921,11 +1922,122 @@ Image* ip_fill_missing_pixels(Image* srcImage, vector<Coordinate> unfilledPixels
         
         Pixel samplePixel = ip_closest_pixel(srcImage, unfilledPixels, point);
         output->setPixel(point.x, point.y, samplePixel);
-        
-        
     }
     
     return output;
+}
+
+/*
+ * Returns a pixel at the given coordinate in the image or a black pixel if the coordinate is
+ * out of bounds.
+ */
+Pixel ip_get_pixel_or_black(Image* src, int x, int y)
+{
+    int width = src->getWidth();
+    int height = src->getHeight();
+    if ((x >= 0) && (x <  width) && (y >= 0) && (y <  height)) {
+        return src->getPixel(x, y);
+    }
+    return Pixel(0,0,0);
+}
+
+/*
+ * Interpolates between the two given pixels.
+ */
+Pixel ip_interpolate_pixel(Pixel srcPixel1, Pixel srcPixel2, double alpha)
+{
+    double red1 = srcPixel1.getColor(RED);
+    double green1 = srcPixel1.getColor(GREEN);
+    double blue1 = srcPixel1.getColor(BLUE);
+    
+    double red2 = srcPixel2.getColor(RED);
+    double green2 = srcPixel2.getColor(GREEN);
+    double blue2 = srcPixel2.getColor(BLUE);
+    
+    // apply the interpolation formula per channel
+    double outputRed = clamp(alpha * red1 + (1 - alpha) * red2, 0, 1);
+    double outputGreen = clamp(alpha * green1 + (1 - alpha) * green2, 0, 1);
+    double outputBlue = clamp(alpha * blue1 + (1 - alpha) * blue2, 0, 1);
+    
+    Pixel outputPixel = Pixel(outputRed, outputGreen, outputBlue);
+    
+    return outputPixel;
+}
+
+/*
+ * Bilinearly samples the given image from the given non-integer coordinate, avoiding using border
+ * pixels or pixels outside the image.
+ */
+
+Pixel ip_resample_bilinear_nonborder(Image* src, double x, double y) {
+    
+    int width = src->getWidth();
+    int height = src->getHeight();
+    
+    bool useTopLeft = true;
+    Pixel topLeftPixel = ip_get_pixel_or_black(src, floor(x), floor(y));
+    bool useTopRight = true;
+    Pixel topRightPixel = ip_get_pixel_or_black(src, floor(x)+1, floor(y));
+    bool useBottomLeft = true;
+    Pixel bottomLeftPixel = ip_get_pixel_or_black(src, floor(x), floor(y)+1);
+    bool useBottomRight = true;
+    Pixel bottomRightPixel = ip_get_pixel_or_black(src, floor(x)+1, floor(y)+1);
+    
+    if (!((floor(x) >= 0) && (floor(x) <  width) && (floor(y) >= 0) && (floor(y) < height))
+        || ip_is_border(src, floor(x), floor(y))) {
+        useTopLeft = false;
+    }
+    if (!((floor(x)+1 >= 0) && (floor(x)+1 <  width) && (floor(y) >= 0) && (floor(y) < height))
+        || ip_is_border(src, floor(x)+1, floor(y))) {
+        useTopRight = false;
+    }
+    if (!((floor(x) >= 0) && (floor(x) <  width) && (floor(y)+1 >= 0) && (floor(y)+1 < height))
+        || ip_is_border(src, floor(x), floor(y)+1)) {
+        useBottomLeft = false;
+    }
+    if (!((floor(x)+1 >= 0) && (floor(x)+1 <  width) && (floor(y)+1 >= 0) && (floor(y)+1 < height))
+        || ip_is_border(src, floor(x)+1, floor(y)+1)) {
+        useBottomRight = false;
+    }
+    
+    bool useTop = true;
+    Pixel topPixel;
+    if (useTopLeft && useTopRight) {
+        topPixel = ip_interpolate_pixel(topLeftPixel, topRightPixel, 1-(x-floor(x)));
+    } else if (useTopLeft) {
+        topPixel = topLeftPixel;
+    } else if (useTopRight) {
+        topPixel = topRightPixel;
+    } else {
+        useTop = false;
+    }
+    
+    bool useBottom = true;
+    Pixel bottomPixel;
+    if (useBottomLeft && useBottomRight) {
+        bottomPixel = ip_interpolate_pixel(bottomLeftPixel, bottomRightPixel, 1-(x-floor(x)));
+    } else if (useBottomLeft) {
+        bottomPixel = bottomLeftPixel;
+    } else if (useBottomRight) {
+        bottomPixel = bottomRightPixel;
+    } else {
+        useBottom = false;
+    }
+    
+    Pixel outputPixel;
+    if (useTop && useBottom) {
+        outputPixel = ip_interpolate_pixel(topPixel, bottomPixel, 1-(y-floor(y)));
+    } else if (useTop) {
+        outputPixel = topPixel;
+    } else if (useBottom) {
+        outputPixel = bottomPixel;
+    } else {
+        // hopefully this case never happens
+        Pixel whitePixel = Pixel(1, 1, 1);
+        outputPixel = whitePixel;
+    }
+    
+    return outputPixel;
 }
 
 /*
@@ -1948,6 +2060,7 @@ Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> or
             CoordinateDouble point;
             point.x = x;
             point.y = y;
+            
             // get quad
             Coordinate quadUpperLeftIndices = get_quad_indices(point, optimizedMesh);
             if (quadUpperLeftIndices.x == -1 || quadUpperLeftIndices.y == -1) {
@@ -1962,8 +2075,10 @@ Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> or
                 unfilledPixels.push_back(unfilledPoint);
                 continue;
             }
+            
             // get weights
             BilinearWeights weights = get_bilinear_weights(point, quadUpperLeftIndices, optimizedMesh);
+            
             // get sample location
             CoordinateDouble sampleLocation = get_sample_location(weights, quadUpperLeftIndices, originalMesh);
             if (sampleLocation.x < 0 || sampleLocation.x > width - 1 || sampleLocation.y < 0 || sampleLocation.y > height - 1) {
@@ -1975,8 +2090,8 @@ Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> or
                 unfilledPixels.push_back(unfilledPoint);
                 continue;
             }
-            // set pixel from sample location (if non-border sample location)
-            Pixel samplePixel = srcImage->getPixel(sampleLocation.x, sampleLocation.y);
+            
+            // check if sample coordinate is a border
             if (ip_is_border(srcImage, sampleLocation.x, sampleLocation.y)) {
                 //cerr << "  Border pixel for (" << x << "," << y << "): (" << sampleLocation.x << "," << sampleLocation.y << ")" << endl;
                 output->setPixel(x, y, whitePixel);
@@ -1986,6 +2101,18 @@ Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> or
                 unfilledPixels.push_back(unfilledPoint);
                 continue;
             }
+            
+            // finally, get sample pixel
+            Pixel samplePixel;
+            bool bilinearlyInterpolate = true;
+            if (bilinearlyInterpolate) {
+                // set pixel from sample location (if non-border sample location)
+                samplePixel = ip_resample_bilinear_nonborder(srcImage, sampleLocation.x, sampleLocation.y);
+            } else {
+                // implicitly use nearest neighbor
+                samplePixel = srcImage->getPixel(sampleLocation.x, sampleLocation.y);
+            }
+
             output->setPixel(x, y, samplePixel);
         }
     }
