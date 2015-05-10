@@ -1680,7 +1680,7 @@ BilinearWeights get_bilinear_weights(CoordinateDouble point, Coordinate upperLef
                 s = 0;
             } else {
                 // this case should not happen
-                cerr << "  Could not interpolate s weight for coordinate (" << point.x << "," << point.y << ")." << endl;
+                cerr << "   Could not interpolate s weight for coordinate (" << point.x << "," << point.y << ")." << endl;
                 s = 0;
             }
         }
@@ -1721,7 +1721,7 @@ BilinearWeights get_bilinear_weights(CoordinateDouble point, Coordinate upperLef
                 t = 0;
             } else {
                 // this case should not happen
-                cerr << "  Could not interpolate t weight for coordinate (" << point.x << "," << point.y << ")." << endl;
+                cerr << "   Could not interpolate t weight for coordinate (" << point.x << "," << point.y << ")." << endl;
                 t = 0;
             }
         }
@@ -2064,10 +2064,10 @@ Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> or
             // get quad
             Coordinate quadUpperLeftIndices = get_quad_indices(point, optimizedMesh);
             if (quadUpperLeftIndices.x == -1 || quadUpperLeftIndices.y == -1) {
-                if (!(x == 0 || x == width - 1 || y == 0 || y == height - 1)) {
+                //if (!(x == 0 || x == width - 1 || y == 0 || y == height - 1)) {
                     // boundary misses are so common that we only write an error for other pixels
-                    cerr << "  No quad for (" << x << "," << y << ")" << endl;
-                }
+                    //cerr << "   No quad for (" << x << "," << y << ")" << endl;
+                //}
                 output->setPixel(x, y, whitePixel);
                 Coordinate unfilledPoint;
                 unfilledPoint.x = x;
@@ -2082,7 +2082,7 @@ Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> or
             // get sample location
             CoordinateDouble sampleLocation = get_sample_location(weights, quadUpperLeftIndices, originalMesh);
             if (sampleLocation.x < 0 || sampleLocation.x > width - 1 || sampleLocation.y < 0 || sampleLocation.y > height - 1) {
-                cerr << "  Bad pos for (" << x << "," << y << "): (" << sampleLocation.x << "," << sampleLocation.y << ")" << endl;
+                cerr << "   Bad pos for (" << x << "," << y << "): (" << sampleLocation.x << "," << sampleLocation.y << ")" << endl;
                 output->setPixel(x, y, whitePixel);
                 Coordinate unfilledPoint;
                 unfilledPoint.x = x;
@@ -2093,7 +2093,7 @@ Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> or
             
             // check if sample coordinate is a border
             if (ip_is_border(srcImage, sampleLocation.x, sampleLocation.y)) {
-                //cerr << "  Border pixel for (" << x << "," << y << "): (" << sampleLocation.x << "," << sampleLocation.y << ")" << endl;
+                //cerr << "   Border pixel for (" << x << "," << y << "): (" << sampleLocation.x << "," << sampleLocation.y << ")" << endl;
                 output->setPixel(x, y, whitePixel);
                 Coordinate unfilledPoint;
                 unfilledPoint.x = x;
@@ -2123,11 +2123,76 @@ Image* ip_interpolate_image(Image* srcImage, vector<vector<CoordinateDouble>> or
 }
 
 /*
+ * Returns the pixel obtained from the nearest neighbor (taking the floor of each coordinate).
+ */
+Pixel ip_resample_nearest(Image* src, double x, double y) {
+    return ip_get_pixel_or_black(src, x, y);
+}
+
+/*
+ * Scales the given image by the given x and y factors using nearest neighbor interpolation.
+ */
+Image* ip_scale(Image* src, double xFac, double yFac)
+{
+    int width = floor(xFac * (src->getWidth()));
+    int height = floor(yFac * (src->getHeight()));
+    Image* output = new Image (width, height);
+    
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            double inputImageX = x/xFac;
+            double inputImageY = y/yFac;
+            // Use nearest neighbor interpolation to preserve crisp boundaries.
+            Pixel outputPixel = ip_resample_nearest(src, inputImageX, inputImageY);
+            output->setPixel(x, y, outputPixel);
+        }
+    }
+    
+    return output;
+}
+
+/*
+ * Scales the given mesh (passed by reference) by the given factor.
+ */
+void ip_scale_mesh(vector<vector<CoordinateDouble>> &mesh, double scaleFactor)
+{
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
+    for (int i = 0; i < numMeshY; i++) {
+        for (int j = 0; j < numMeshX; j++) {
+            CoordinateDouble &coord = mesh[i][j];
+            coord.x = coord.x * scaleFactor;
+            coord.y = coord.y * scaleFactor;
+        }
+    }
+}
+
+/*
  * Fits the given src image to its rectangular boundaries, using white as transparent.
  * This is the main method of the project.
  */
 Image* ip_rectangle(Image* srcImage)
 {
+    // === Possible downscaling ===
+    
+    int originalWidth = srcImage->getWidth();
+    int originalHeight = srcImage->getHeight();
+    Image* srcUnscaledImage = new Image(*srcImage);
+    bool downscaledImage = false;
+    double scaleFactor = 1;
+    const int maxDimen = 600; // any larger width or height and we downscale
+    if (originalWidth > maxDimen || originalHeight > maxDimen) {
+        cerr << " Downscaling image." << endl;
+        downscaledImage = true;
+        double xFactor = double(maxDimen) / originalWidth;
+        double yFactor = double(maxDimen) / originalHeight;
+        scaleFactor = fmin(xFactor, yFactor);
+        srcImage = ip_scale(srcImage, scaleFactor, scaleFactor);
+        cerr << "  Finished downscaling image." << endl;
+    }
+    
+    // === End possible downscaling ===
+    
     // === Local warp to get original mesh ===
     
     cerr << " Starting local warp." << endl;
@@ -2164,7 +2229,7 @@ Image* ip_rectangle(Image* srcImage)
         }
     }
     
-    cerr << " Finished local warp." << endl;
+    cerr << "  Finished local warp." << endl;
     
     // === End local warp to get original mesh ===
     
@@ -2186,16 +2251,8 @@ Image* ip_rectangle(Image* srcImage)
     
     // Get energy
     Quadratic energyQuadratic = ip_energy_total(srcImage, mesh, theta, numBins);
-//    energyQuadratic.roundCoefficients(0.000001); // round for readability; has little impact on result
-//    energyQuadratic.printEquation();
     // Get derivative
     double **derivatives = energyQuadratic.derivatives();
-//    for (int i = 0; i < (numMeshX * numMeshY * 2); i++) {
-//        for (int j = 0; j < (numMeshX * numMeshY * 2) + 1; j++) {
-//            cerr << derivatives[i][j] << " ";
-//        }
-//        cerr << endl;
-//    }
     // The only issue with this matrix is that it's one col too wide, due to each equation's
     // constant term. We now make a vertical matrix and a square matrix.
     int numVariables = (int) (numMeshX * numMeshY * 2);
@@ -2234,30 +2291,35 @@ Image* ip_rectangle(Image* srcImage)
         outputMesh.push_back(outputMeshRow);
     }
     
-    cerr << " Finished mesh optimization." << endl;
-    
-//    cerr << "Output mesh:" << endl;
-//    for (int y = 0; y < numMeshY; y++) {
-//        for (int x = 0; x < numMeshX; x++) {
-//            CoordinateDouble coord = outputMesh[y][x];
-//            cerr << "(" << coord.x << ", " << coord.y << "), ";
-//        }
-//        cerr << endl;
-//    }
+    cerr << "  Finished mesh optimization." << endl;
     
     // === End optimize mesh ===
+    
+    // === Possible upscaling of mesh ===
+    
+    if (downscaledImage) {
+        cerr << " Starting upscaling of meshes." << endl;
+        ip_scale_mesh(mesh, 1 / scaleFactor);
+        ip_scale_mesh(outputMesh, 1 / scaleFactor);
+        cerr << "  Finished upscaling of meshes." << endl;
+    }
+    
+    // === End possible upscaling of mesh ===
+    
+    // === Start interpolation ===
     
     // Use optimized mesh to interpolate displacement of every pixel; fill in few blank pixels
     
     cerr << " Starting image interpolation." << endl;
     
-    Image* finalImage = ip_interpolate_image(srcImage, mesh, outputMesh);
+    Image* finalImage = ip_interpolate_image(srcUnscaledImage, mesh, outputMesh);
     
-    cerr << " Finished image interpolation." << endl;
+    cerr << "  Finished image interpolation." << endl;
+    
+    // === End interpolation ===
     
     return finalImage;
     
     // Scale the final mesh and re-interpolate to fix stretching
     
-    return nullptr;
 }
