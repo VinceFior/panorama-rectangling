@@ -1866,10 +1866,12 @@ Pixel ip_closest_pixel(Image* src, vector<Coordinate> unfilledPixels, Coordinate
     int x = startCoord.x;
     int y = startCoord.y;
     
+    // first try to naively find a nearby pixel, since this seems to produce better results than
+    // the proper BFS below
     Coordinate point;
     point.x = x;
     point.y = y;
-    int maxSearch = 100;
+    const int maxSearch = 200;
     for (int d = 0; d < maxSearch; d++) {
         int upY = point.y - d;
         Coordinate upPoint;
@@ -1905,52 +1907,73 @@ Pixel ip_closest_pixel(Image* src, vector<Coordinate> unfilledPixels, Coordinate
         }
     }
     
-    // TODO: use this BFS (for some reason it misses a couple pixels on the top edge)
-//    set<Coordinate> expandedPixels;
-//    deque<Coordinate> fringe;
-//    fringe.push_back(startCoord);
-//    while (fringe.size() != 0) {
-//        Coordinate currentPixel = fringe.front();
-//        fringe.pop_front();
-//        if (!vector_contains_coordinate(unfilledPixels, currentPixel)) {
-//            return src->getPixel(currentPixel.x, currentPixel.y);
-//        }
-//        bool currentPixelInExpandedPixels = expandedPixels.count(currentPixel);
-//        if (!currentPixelInExpandedPixels) {
-//            expandedPixels.insert(currentPixel);
-//            // Note: This BFS currently does not allow for diagonals
-//            // Possible todo: allow diagonals
-//            int upY = currentPixel.y - 1;
-//            int downY = currentPixel.y + 1;
-//            int leftX = currentPixel.x - 1;
-//            int rightX = currentPixel.x + 1;
-//            if (upY >= 0) {
-//                Coordinate upCoord;
-//                upCoord.x = x;
-//                upCoord.y = upY;
-//                fringe.push_back(upCoord);
-//            }
-//            if (downY < height) {
-//                Coordinate downCoord;
-//                downCoord.x = x;
-//                downCoord.y = downY;
-//                fringe.push_back(downCoord);
-//            }
-//            if (leftX >= 0) {
-//                Coordinate leftCoord;
-//                leftCoord.x = leftX;
-//                leftCoord.y = y;
-//                fringe.push_back(leftCoord);
-//            }
-//            if (rightX < width) {
-//                Pixel rightPixel = src->getPixel(rightX, y);
-//                Coordinate rightCoord;
-//                rightCoord.x = rightX;
-//                rightCoord.y = y;
-//                fringe.push_back(rightCoord);
-//            }
-//        }
-//    }
+    // if the naive search above failed, perform a proper breadth-first search (BFS)
+    set<Coordinate> expandedPixels;
+    deque<Coordinate> fringe;
+    fringe.push_back(startCoord);
+    while (fringe.size() != 0) {
+        Coordinate currentPixel = fringe.front();
+        fringe.pop_front();
+        if (!vector_contains_coordinate(unfilledPixels, currentPixel)) {
+            return src->getPixel(currentPixel.x, currentPixel.y);
+        }
+        bool currentPixelInExpandedPixels = expandedPixels.count(currentPixel);
+        if (!currentPixelInExpandedPixels) {
+            expandedPixels.insert(currentPixel);
+            int upY = currentPixel.y - 1;
+            int downY = currentPixel.y + 1;
+            int leftX = currentPixel.x - 1;
+            int rightX = currentPixel.x + 1;
+            if (upY >= 0) {
+                Coordinate upCoord;
+                upCoord.x = x;
+                upCoord.y = upY;
+                fringe.push_back(upCoord);
+            }
+            if (downY < height) {
+                Coordinate downCoord;
+                downCoord.x = x;
+                downCoord.y = downY;
+                fringe.push_back(downCoord);
+            }
+            if (leftX >= 0) {
+                Coordinate leftCoord;
+                leftCoord.x = leftX;
+                leftCoord.y = y;
+                fringe.push_back(leftCoord);
+            }
+            if (rightX < width) {
+                Coordinate rightCoord;
+                rightCoord.x = rightX;
+                rightCoord.y = y;
+                fringe.push_back(rightCoord);
+            }
+            if (upY >= 0 && leftX >= 0) {
+                Coordinate upLeftCoord;
+                upLeftCoord.x = leftX;
+                upLeftCoord.y = upY;
+                fringe.push_back(upLeftCoord);
+            }
+            if (upY >= 0 && rightX < width) {
+                Coordinate upRightCoord;
+                upRightCoord.x = rightX;
+                upRightCoord.y = upY;
+                fringe.push_back(upRightCoord);
+            }
+            if (downY < height && leftX >= 0) {
+                Coordinate downLeftCoord;
+                downLeftCoord.x = leftX;
+                downLeftCoord.y = downY;
+                fringe.push_back(downLeftCoord);
+            }
+            if (downY < height && rightX < width) {
+                Coordinate downRightCoord;
+                downRightCoord.x = rightX;
+                downRightCoord.y = downY;
+                fringe.push_back(downRightCoord);
+            }
+        }
+    }
     
     // this case should never happen (if the image is reasonable)
     return Pixel(1,1,1);
