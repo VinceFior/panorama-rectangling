@@ -33,6 +33,8 @@ enum MenuItem {
     MENU_PROCESS_INSERT_VERTICAL_SEAMS,
     MENU_PROCESS_INSERT_HORIZONTAL_SEAMS,
     MENU_PROCESS_LOCAL_WARP,
+    MENU_PROCESS_SHOW_INPUT_MESH,
+    MENU_PROCESS_SHOW_OUTPUT_MESH,
     MENU_PROCESS_RECTANGLE,
 };
 
@@ -58,6 +60,8 @@ int make_menu ()
     glutAddMenuEntry("Insert vertical seams..", MENU_PROCESS_INSERT_VERTICAL_SEAMS);
     glutAddMenuEntry("Insert horizontal seams..", MENU_PROCESS_INSERT_HORIZONTAL_SEAMS);
     glutAddMenuEntry("Local warp", MENU_PROCESS_LOCAL_WARP);
+    glutAddMenuEntry("Show input mesh", MENU_PROCESS_SHOW_INPUT_MESH);
+    glutAddMenuEntry("Show optimized mesh", MENU_PROCESS_SHOW_OUTPUT_MESH);
     glutAddMenuEntry("Rectangle", MENU_PROCESS_RECTANGLE);
     
     int main = glutCreateMenu(menu_func);
@@ -209,10 +213,22 @@ void process_func (int value)
             cerr << "Locally warping.." << endl;
             resultImage = ip_local_warp(currentImage);
             break;
+
+        case MENU_PROCESS_SHOW_INPUT_MESH: {
+            cerr << "Rectangling.." << endl;
+            resultImage = ip_rectangle(currentImage, true, false);
+            break;
+        }
+            
+        case MENU_PROCESS_SHOW_OUTPUT_MESH: {
+            cerr << "Rectangling.." << endl;
+            resultImage = ip_rectangle(currentImage, false, true);
+            break;
+        }
             
         case MENU_PROCESS_RECTANGLE: {
             cerr << "Rectangling.." << endl;
-            resultImage = ip_rectangle(currentImage);
+            resultImage = ip_rectangle(currentImage, false, false);
             break;
         }
             

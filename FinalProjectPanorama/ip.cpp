@@ -2242,7 +2242,7 @@ void ip_scale_mesh(vector<vector<CoordinateDouble>> &mesh, double scaleFactor)
  * Fits the given src image to its rectangular boundaries, using white as transparent.
  * This is the main method of the project.
  */
-Image* ip_rectangle(Image* srcImage)
+Image* ip_rectangle(Image* srcImage, bool showInputMesh, bool showOutputMesh)
 {
     // === Possible downscaling ===
     
@@ -2303,6 +2303,10 @@ Image* ip_rectangle(Image* srcImage)
     cerr << "  Finished local warp." << endl;
     
     // === End local warp to get original mesh ===
+    
+    if (showInputMesh) {
+        return ip_draw_vertices(srcImage, mesh);
+    }
     
     // === Optimize mesh ===
     
@@ -2372,6 +2376,10 @@ Image* ip_rectangle(Image* srcImage)
         ip_scale_mesh(mesh, 1 / scaleFactor);
         ip_scale_mesh(outputMesh, 1 / scaleFactor);
         cerr << "  Finished upscaling of meshes." << endl;
+    }
+    
+    if (showOutputMesh) {
+        return ip_draw_vertices(srcImage, outputMesh);
     }
     
     // === End possible upscaling of mesh ===
