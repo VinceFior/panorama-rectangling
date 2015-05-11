@@ -1152,6 +1152,139 @@ double* ip_image_to_array(Image* srcImage) {
 }
 
 /*
+ * Given a point and the upper-left vertex of a mesh, computes the bilinear weights of the point.
+ * The right vertices have weight s, and the bottom vertices have weight t.
+ * Guidance from http://www.ahinson.com/algorithms_general/Sections/InterpolationRegression/InterpolationIrregularBilinear.pdf .
+ */
+BilinearWeights get_bilinear_weights(CoordinateDouble point, Coordinate upperLeftIndices, vector<vector<CoordinateDouble>> mesh)
+{
+    CoordinateDouble p1 = mesh[upperLeftIndices.y][upperLeftIndices.x]; // topLeft
+    CoordinateDouble p2 = mesh[upperLeftIndices.y][upperLeftIndices.x+1]; // topRight
+    CoordinateDouble p3 = mesh[upperLeftIndices.y+1][upperLeftIndices.x]; // bottomLeft
+    CoordinateDouble p4 = mesh[upperLeftIndices.y+1][upperLeftIndices.x+1]; // bottomRight
+    
+    double slopeTop = (p2.y - p1.y) / (p2.x - p1.x);
+    double slopeBottom = (p4.y - p3.y) / (p4.x - p3.x);
+    double slopeLeft = (p1.y - p3.y) / (p1.x - p3.x);
+    double slopeRight = (p2.y - p4.y) / (p2.x - p4.x);
+    
+    double quadraticEpsilon = 0.01;
+    
+    if (slopeTop == slopeBottom && slopeLeft == slopeRight) {
+        
+        // method 3
+        vector<vector<double>> squareMat;
+        vector<double> row1;
+        row1.push_back(p2.x - p1.x);
+        row1.push_back(p3.x - p1.x);
+        squareMat.push_back(row1);
+        vector<double> row2;
+        row2.push_back(p2.y - p1.y);
+        row2.push_back(p3.y - p1.y);
+        squareMat.push_back(row2);
+        
+        vector<vector<double>> vectorMat;
+        vector<double>vrow1;
+        vrow1.push_back(point.x - p1.x);
+        vectorMat.push_back(vrow1);
+        vector<double>vrow2;
+        vrow2.push_back(point.y - p1.y);
+        vectorMat.push_back(vrow2);
+        
+        vector<vector<double>> squareMatInv = matinvGJ(squareMat);
+        vector<vector<double>> solution = matmul(squareMatInv, vectorMat);
+        
+        BilinearWeights weights;
+        weights.s = solution[0][0];
+        weights.t = solution[1][0];
+        return weights;
+        
+    } else if (slopeLeft == slopeRight) {
+        
+        // method 2
+        double a = (p2.x - p1.x)*(p4.y - p3.y) - (p2.y - p1.y)*(p4.x - p3.x);
+        double b = point.y*((p4.x-p3.x)-(p2.x-p1.x))-point.x*((p4.y-p3.y)-(p2.y-p1.y))+p1.x*(p4.y-p3.y)-p1.y*(p4.x-p3.x)+(p2.x-p1.x)*(p3.y)-(p2.y-p1.y)*(p3.x);
+        double c = point.y*(p3.x-p1.x)-point.x*(p3.y-p1.y)+p1.x*p3.y-p3.x*p1.y;
+        
+        double s1 = (-1 * b + sqrt(b*b - 4*a*c)) / (2 * a);
+        double s2 = (-1 * b - sqrt(b*b - 4*a*c)) / (2 * a);
+        double s;
+        if (s1 >= 0 && s1 <= 1) {
+            s = s1;
+        } else if (s2 >= 0 && s2 <= 1) {
+            s = s2;
+        } else {
+            
+            if ((s1 > 1 && s1 - quadraticEpsilon < 1) ||
+                (s2 > 1 && s2 - quadraticEpsilon < 1)) {
+                s = 1;
+            } else if ((s1 < 0 && s1 + quadraticEpsilon > 0) ||
+                       (s2 < 0 && s2 + quadraticEpsilon > 0)) {
+                s = 0;
+            } else {
+                // this case should not happen
+                cerr << "   Could not interpolate s weight for coordinate (" << point.x << "," << point.y << ")." << endl;
+                s = 0;
+            }
+        }
+        
+        double val = (p3.y + (p4.y - p3.y)*s - p1.y - (p2.y - p1.y)*s);
+        double t = (point.y - p1.y - (p2.y - p1.y)*s) / val;
+        double valEpsilon = 0.1; // 0.1 and 0.01 appear identical
+        if (fabs(val) < valEpsilon) {
+            // Py ~= Cy because Dy - Cy ~= 0. So, instead of interpolating with y, we use x.
+            t = (point.x - p1.x - (p2.x - p1.x)*s) / (p3.x + (p4.x - p3.x)*s - p1.x - (p2.x - p1.x)*s);
+        }
+        
+        BilinearWeights weights;
+        weights.s = s;
+        weights.t = t;
+        return weights;
+        
+    } else {
+        
+        // method 1
+        double a = (p3.x - p1.x)*(p4.y - p2.y) - (p3.y - p1.y)*(p4.x - p2.x);
+        double b = point.y*((p4.x - p2.x) - (p3.x - p1.x)) - point.x*((p4.y - p2.y) - (p3.y - p1.y)) + (p3.x - p1.x)*(p2.y) - (p3.y - p1.y)*(p2.x) + (p1.x)*(p4.y - p2.y) - (p1.y)*(p4.x - p2.x);
+        double c = point.y*(p2.x - p1.x) - (point.x)*(p2.y - p1.y) + p1.x*p2.y - p2.x*p1.y;
+        
+        double t1 = (-1 * b + sqrt(b*b - 4*a*c)) / (2 * a);
+        double t2 = (-1 * b - sqrt(b*b - 4*a*c)) / (2 * a);
+        double t;
+        if (t1 >= 0 && t1 <= 1) {
+            t = t1;
+        } else if (t2 >= 0 && t2 <= 1) {
+            t = t2;
+        } else {
+            if ((t1 > 1 && t1 - quadraticEpsilon < 1) ||
+                (t2 > 1 && t2 - quadraticEpsilon < 1)) {
+                t = 1;
+            } else if ((t1 < 0 && t1 + quadraticEpsilon > 0) ||
+                       (t2 < 0 && t2 + quadraticEpsilon > 0)) {
+                t = 0;
+            } else {
+                // this case should not happen
+                cerr << "   Could not interpolate t weight for coordinate (" << point.x << "," << point.y << ")." << endl;
+                t = 0;
+            }
+        }
+        
+        double val = (p2.y + (p4.y - p2.y)*t - p1.y - (p3.y - p1.y)*t);
+        double s = (point.y - p1.y - (p3.y - p1.y)*t) / val;
+        double valEpsilon = 0.1; // 0.1 and 0.01 appear identical
+        if (fabs(val) < valEpsilon) {
+            // Py ~= Ay because By - Ay ~= 0. So, instead of interpolating with y, we use x.
+            s = (point.x - p1.x - (p3.x - p1.x)*t) / (p2.x + (p4.x - p2.x)*t - p1.x - (p3.x - p1.x)*t);
+        }
+        
+        BilinearWeights weights;
+        weights.s = clamp(s, 0, 1);
+        weights.t = clamp(t, 0, 1);
+        return weights;
+    }
+}
+
+/*
  * Determines whether the given point lies within the quad given by the vertices.
  */
 bool is_in_quad(CoordinateDouble point, CoordinateDouble topLeft, CoordinateDouble topRight,
@@ -1359,15 +1492,14 @@ vector<vector<vector<LineSegment>>> ip_get_line_segments_in_mesh(double* lineSeg
     
     size_t numMeshX = mesh[0].size();
     size_t numMeshY = mesh.size();
-    // TODO: fix switching x and y (it's now mesh[rol][col] = mesh[y][x])
-    for (int i = 0; i < numMeshX - 1; i++) {
-        vector<vector<LineSegment>> row;
-        for (int j = 0; j < numMeshY - 1; j++) {
+    for (int row = 0; row < numMeshY - 1; row++) {
+        vector<vector<LineSegment>> rowVec;
+        for (int col = 0; col < numMeshX - 1; col++) {
             // now we have a quad, mesh[i][j]
-            CoordinateDouble topLeft = mesh[i][j];
-            CoordinateDouble topRight = mesh[i+1][j];
-            CoordinateDouble bottomLeft = mesh[i][j+1];
-            CoordinateDouble bottomRight = mesh[i+1][j+1];
+            CoordinateDouble topLeft = mesh[row][col];
+            CoordinateDouble topRight = mesh[row][col+1];
+            CoordinateDouble bottomLeft = mesh[row+1][col];
+            CoordinateDouble bottomRight = mesh[row+1][col+1];
             vector<LineSegment> lineSegmentsInQuad;
             for (int lineNum = 0; lineNum < numLines; lineNum++) {
                 LineSegment lineSegment;
@@ -1421,9 +1553,9 @@ vector<vector<vector<LineSegment>>> ip_get_line_segments_in_mesh(double* lineSeg
                 }
                 
             }
-            row.push_back(lineSegmentsInQuad);
+            rowVec.push_back(lineSegmentsInQuad);
         }
-        lineSegmentsInMesh.push_back(row);
+        lineSegmentsInMesh.push_back(rowVec);
     }
 
     return lineSegmentsInMesh;
@@ -1432,111 +1564,162 @@ vector<vector<vector<LineSegment>>> ip_get_line_segments_in_mesh(double* lineSeg
 /*
  * Returns the quadratic terms of the line energy of the mesh on the image with the given angle theta.
  */
-double *ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> mesh,
-                       double *theta, int numBins)
+Quadratic ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> mesh,
+                         double *theta, int numBins)
 {
-    return nullptr;
-//    double energy = 0;
-//    int width = srcImage->getWidth();
-//    int height = srcImage->getHeight();
-//    
-//    // get lineSegments
-//    double* imageArray = ip_image_to_array(srcImage);
-//    int numLines;
-//    double* lineSegments = lsd(&numLines, imageArray, width, height);
-//
-//    vector<vector<vector<LineSegment>>> lineSegmentsInMesh = ip_get_line_segments_in_mesh(lineSegments, numLines, inputMesh);
-//    
-//    int numLinesOutput; // should be the same as numLines, but might not be
-//    double* lineSegmentsOutput = lsd(&numLinesOutput, imageArray, width, height);
-//    vector<vector<vector<LineSegment>>> lineSegmentsInMeshOutput = ip_get_line_segments_in_mesh(lineSegmentsOutput, numLinesOutput, outputMesh);
-//    // get a flat copy so we can determine corresponding line segments (for the most part..)
-//    vector<LineSegment> lineSegmentsInMeshOutputFlat;
-//    for (int i = 0; i < lineSegmentsInMeshOutput.size(); i++) {
-//        for (int j = 0; j < lineSegmentsInMeshOutput[0].size(); j++) {
-//            for (int k = 0; k < lineSegmentsInMeshOutput[i][j].size(); k++) {
-//                lineSegmentsInMeshOutputFlat.push_back(lineSegmentsInMeshOutput[i][j][k]);
-//            }
-//        }
-//    }
-//    
-//    double thetaPerBucket = M_PI / numBins;
-//    
-//    size_t numMeshX = inputMesh.size();
-//    size_t numMeshY = inputMesh[0].size();
-//    long numLineSegments = 0;
-//    for (int i = 0; i < numMeshX - 1; i++) {
-//        for (int j = 0; j < numMeshY - 1; j++) {
-//            
-//            CoordinateDouble topLeft = inputMesh[i][j];
-//            CoordinateDouble topRight = inputMesh[i+1][j];
-//            CoordinateDouble bottomLeft = inputMesh[i][j+1];
-//            CoordinateDouble bottomRight = inputMesh[i+1][j+1];
-//            
-//            vector<LineSegment> lineSegmentsInQuad = lineSegmentsInMesh[i][j];
-//            for (int k = 0; k < lineSegmentsInQuad.size(); k++) {
-//                
-//                // e is [[a,b], [c,d]] where a is the bilinear interpolation of horiz and b is vert; c,d are for pt 2
-//                LineSegment lineSegment = lineSegmentsInQuad[k];
-//                vector<vector<double>> eHat;
-//                vector<double> eHatRow1;
-//                eHatRow1.push_back((lineSegment.x1 - topLeft.x)/(topRight.x - topLeft.x));
-//                eHatRow1.push_back((lineSegment.y1 - topLeft.y)/(bottomLeft.y - topLeft.y));
-//                eHat.push_back(eHatRow1);
-//                vector<double> eHatRow2;
-//                eHatRow2.push_back((lineSegment.x2 - topLeft.x)/(topRight.x - topLeft.x));
-//                eHatRow2.push_back((lineSegment.y2 - topLeft.y)/(bottomLeft.y - topLeft.y));
-//                eHat.push_back(eHatRow2);
-//                
-//                LineSegment lineSegmentOutput = lineSegmentsInMeshOutputFlat[numLineSegments];
-//                vector<vector<double>> e;
-//                vector<double> eRow1;
-//                eRow1.push_back((lineSegmentOutput.x1 - topLeft.x)/(topRight.x - topLeft.x));
-//                eRow1.push_back((lineSegmentOutput.y1 - topLeft.y)/(bottomLeft.y - topLeft.y));
-//                e.push_back(eRow1);
-//                vector<double> eRow2;
-//                eRow2.push_back((lineSegmentOutput.x2 - topLeft.x)/(topRight.x - topLeft.x));
-//                eRow2.push_back((lineSegmentOutput.y2 - topLeft.y)/(bottomLeft.y - topLeft.y));
-//                e.push_back(eRow2);
-//                
-//                double lineSegmentTheta = atan((lineSegmentOutput.y2 - lineSegmentOutput.y1) /
-//                                               (lineSegmentOutput.x2 - lineSegmentOutput.x1));
-//                
-//                int lineSegmentBucket = (lineSegmentTheta + M_PI / 2) / thetaPerBucket;
-//                double targetTheta = theta[lineSegmentBucket];
-//                vector<vector<double>> r;
-//                vector<double> rRow1;
-//                rRow1.push_back(cos(targetTheta));
-//                rRow1.push_back(-sin(targetTheta));
-//                r.push_back(rRow1);
-//                vector<double> rRow2;
-//                rRow2.push_back(sin(targetTheta));
-//                rRow2.push_back(cos(targetTheta));
-//                
-//                // C = R*eHat*(eHat^T * eHat)^(-1)*eHat^T*R^T-I
-//                vector<vector<double>> ete = matmul(mattrans(eHat), eHat);
-//                vector<vector<double>> eteInv = matinv(ete); matinvMinor
-//                vector<vector<double>> prdr = matmul(eteInv, mattrans(eHat));
-//                vector<vector<double>> prdrr = matmul(prdr, mattrans(r));
-//                vector<vector<double>> prdl = matmul(eHat, prdrr);
-//                vector<vector<double>> prdll = matmul(r, prdl);
-//                vector<vector<double>> c = matsub(prdll, matiden(2));
-//                
-//                // add (C*e)^2
-//                vector<vector<double>> ce = matmul(c, e);
-//                double mag = matmag(ce);
-//                double magSqrd = pow(mag, 2);
-//                energy += magSqrd;
-//                
-//                numLineSegments++;
-//            }
-//        }
-//    }
-//    
-//    // normalize
-//    energy = energy / numLineSegments;
-//    
-//    return energy;
+    int width = srcImage->getWidth();
+    int height = srcImage->getHeight();
+    
+    size_t numMeshX = mesh[0].size();
+    size_t numMeshY = mesh.size();
+    int numVariables = (int) (numMeshX * numMeshY * 2);
+    Quadratic energyQuadratic = Quadratic(numVariables);
+    
+    // NOTE: This method is not correctly implemented.
+    return energyQuadratic;
+    
+    // get lineSegments
+    double* imageArray = ip_image_to_array(srcImage);
+    int numLines;
+    double* lineSegments = lsd(&numLines, imageArray, width, height);
+
+    vector<vector<vector<LineSegment>>> lineSegmentsInMesh = ip_get_line_segments_in_mesh(lineSegments, numLines, mesh);
+    
+    int numLinesOutput; // should be the same as numLines, but might not be
+    double* lineSegmentsOutput = lsd(&numLinesOutput, imageArray, width, height);
+    vector<vector<vector<LineSegment>>> lineSegmentsInMeshOutput = ip_get_line_segments_in_mesh(lineSegmentsOutput, numLinesOutput, mesh);
+    // get a flat copy so we can determine corresponding line segments (for the most part..)
+    vector<LineSegment> lineSegmentsInMeshOutputFlat;
+    
+    size_t numLinesX = lineSegmentsInMeshOutput[0].size();
+    size_t numLinesY = lineSegmentsInMeshOutput.size();
+    
+    for (int row = 0; row < numLinesY; row++) {
+        for (int col = 0; col < numLinesX; col++) {
+            for (int k = 0; k < lineSegmentsInMeshOutput[row][col].size(); k++) {
+                lineSegmentsInMeshOutputFlat.push_back(lineSegmentsInMeshOutput[row][col][k]);
+            }
+        }
+    }
+    
+    // iterate through each quad; each quad is defined by its upper-left (small y, small x) corner
+            
+    size_t numberOfQuads = (numMeshX - 1) * (numMeshY - 1);
+    double thetaPerBucket = M_PI / numBins;
+    long numLineSegments = 0;
+    
+    // iterate through each quad
+    for (int row = 0; row < numMeshY - 1; row++) {
+        for (int col = 0; col < numMeshX - 1; col++) {
+            numLineSegments++;
+            
+            // iterate through each line in the quad
+            vector<LineSegment> lineSegmentsInQuad = lineSegmentsInMesh[row][col];
+            for (int k = 0; k < lineSegmentsInQuad.size(); k++) {
+                LineSegment lineSegment = lineSegmentsInQuad[k];
+                
+                Coordinate quadUpperLeftIndices;
+                quadUpperLeftIndices.x = col;
+                quadUpperLeftIndices.y = row;
+                CoordinateDouble linePoint1;
+                linePoint1.x = lineSegment.x1;
+                linePoint1.y = lineSegment.y1;
+                BilinearWeights linePoint1Weights = get_bilinear_weights(linePoint1, quadUpperLeftIndices, mesh);
+                CoordinateDouble linePoint2;
+                linePoint2.x = lineSegment.x2;
+                linePoint2.y = lineSegment.y2;
+                BilinearWeights linePoint2Weights = get_bilinear_weights(linePoint2, quadUpperLeftIndices, mesh);
+                
+                // eHat is two rows of x0,y0,...,x3,y3, determined by s and t (s is right, t is bottom)
+                vector<vector<double>> eHat;
+                // row 1
+                vector<double> eHatRow1;
+                //tl
+                eHatRow1.push_back((1-linePoint1Weights.s)*(1-linePoint1Weights.t));
+                eHatRow1.push_back((1-linePoint1Weights.s)*(1-linePoint1Weights.t));
+                // tr
+                eHatRow1.push_back(linePoint1Weights.s*(1-linePoint1Weights.t));
+                eHatRow1.push_back(linePoint1Weights.s*(1-linePoint1Weights.t));
+                // bl
+                eHatRow1.push_back(linePoint1Weights.t*(1-linePoint1Weights.s));
+                eHatRow1.push_back(linePoint1Weights.t*(1-linePoint1Weights.s));
+                // br
+                eHatRow1.push_back(linePoint1Weights.t*linePoint1Weights.s);
+                eHatRow1.push_back(linePoint1Weights.t*linePoint1Weights.s);
+                eHat.push_back(eHatRow1);
+                // row 2
+                vector<double> eHatRow2;
+                //tl
+                eHatRow2.push_back((1-linePoint2Weights.s)*(1-linePoint2Weights.t));
+                eHatRow2.push_back((1-linePoint2Weights.s)*(1-linePoint2Weights.t));
+                // tr
+                eHatRow2.push_back(linePoint2Weights.s*(1-linePoint2Weights.t));
+                eHatRow2.push_back(linePoint2Weights.s*(1-linePoint2Weights.t));
+                // bl
+                eHatRow2.push_back(linePoint2Weights.t*(1-linePoint2Weights.s));
+                eHatRow2.push_back(linePoint2Weights.t*(1-linePoint2Weights.s));
+                // br
+                eHatRow2.push_back(linePoint2Weights.t*linePoint2Weights.s);
+                eHatRow2.push_back(linePoint2Weights.t*linePoint2Weights.s);
+                eHat.push_back(eHatRow2);
+                
+                LineSegment lineSegmentOutput = lineSegmentsInMeshOutputFlat[numLineSegments];
+                
+                double lineSegmentTheta = atan((lineSegmentOutput.y2 - lineSegmentOutput.y1) /
+                                               (lineSegmentOutput.x2 - lineSegmentOutput.x1));
+                
+                int lineSegmentBucket = (lineSegmentTheta + M_PI / 2) / thetaPerBucket;
+                double targetTheta = theta[lineSegmentBucket];
+                vector<vector<double>> r;
+                vector<double> rRow1;
+                rRow1.push_back(cos(targetTheta));
+                rRow1.push_back(-sin(targetTheta));
+                r.push_back(rRow1);
+                vector<double> rRow2;
+                rRow2.push_back(sin(targetTheta));
+                rRow2.push_back(cos(targetTheta));
+                r.push_back(rRow2);
+                
+                // C = R*eHat*(eHat^T * eHat)^(-1)*eHat^T*R^T-I
+                vector<vector<double>> ete = matmul(mattrans(eHat), eHat);
+                vector<vector<double>> eteInv = matinvGJ(ete); // was originall matinvMinor; could be removed
+                vector<vector<double>> prdr = matmul(eteInv, mattrans(eHat));
+                vector<vector<double>> prdrr = matmul(prdr, mattrans(r));
+                vector<vector<double>> prdl = matmul(eHat, prdrr);
+                vector<vector<double>> prdll = matmul(r, prdl);
+                vector<vector<double>> c = matsub(prdll, matiden(2));
+                
+                
+                
+                // get the indices of the four corners of this quadrilateral
+                int topLeftIndexX = variableIndexForCoordDimen(col, row, false, numMeshX);
+                int topLeftIndexY = variableIndexForCoordDimen(col, row, true, numMeshX);
+                int topRightIndexX = variableIndexForCoordDimen(col+1, row, false, numMeshX);
+                int topRightIndexY = variableIndexForCoordDimen(col+1, row, true, numMeshX);
+                int bottomLeftIndexX = variableIndexForCoordDimen(col, row+1, false, numMeshX);
+                int bottomLeftIndexY = variableIndexForCoordDimen(col, row+1, true, numMeshX);
+                int bottomRightIndexX = variableIndexForCoordDimen(col+1, row+1, false, numMeshX);
+                int bottomRightIndexY = variableIndexForCoordDimen(col+1, row+1, true, numMeshX);
+                int quadCoordinateVarIndices[8] = {topLeftIndexX, topLeftIndexY,
+                                                   topRightIndexX, topRightIndexY,
+                                                   bottomLeftIndexX, bottomLeftIndexY,
+                                                   bottomRightIndexX, bottomRightIndexY};
+                
+                // NOTE: This increment is incorrect.
+                for (int kk = 0; kk < 8; kk++) {
+                    // the squared term of quadCoordinateVarIndices[jj]
+                    energyQuadratic.incrementCoeffForVars(quadCoordinateVarIndices[kk],
+                                                          quadCoordinateVarIndices[kk],
+                                                          pow(c[0][0]+c[0][1], 2) + pow(c[1][0]+c[1][1], 2));
+                }
+            }
+        }
+    }
+    
+    // normalize
+    energyQuadratic.scaleCoefficients(1.0 / numberOfQuads);
+    
+    return energyQuadratic;
 }
 
 /*
@@ -1556,11 +1739,9 @@ Quadratic ip_energy_total(Image* srcImage, vector<vector<CoordinateDouble>> mesh
     energyQuadratic.addQuadratic(shapeEnergyQuadratic, esWeight);
     
     // Add weighted line energy
-//    double elWeight = 100;
-//    double *lineEnergy = ip_energy_line(srcImage, mesh, theta, numBins);
-//    for (int i = 0; i < numTermsInQuadratic; i++) {
-//        energyQuadraticCoefficients[i] += elWeight * lineEnergy[i];
-//    }
+    //Quadratic lineEnergyQuadratic = ip_energy_line(srcImage, mesh, theta, numBins);
+    //double elWeight = 100;
+    //energyQuadratic.addQuadratic(lineEnergyQuadratic, elWeight);
     
     // Add weighted boundary energy
     Quadratic boundaryEnergyQuadratic = ip_energy_boundary(srcImage, mesh);
@@ -1606,139 +1787,6 @@ Image* ip_draw_vertices(Image* src, vector<vector<CoordinateDouble>> mesh)
         }
     }
     return result;
-}
-
-/*
- * Given a point and the upper-left vertex of a mesh, computes the bilinear weights of the point.
- * The right vertices have weight s, and the bottom vertices have weight t.
- * Guidance from http://www.ahinson.com/algorithms_general/Sections/InterpolationRegression/InterpolationIrregularBilinear.pdf .
- */
-BilinearWeights get_bilinear_weights(CoordinateDouble point, Coordinate upperLeftIndices, vector<vector<CoordinateDouble>> mesh)
-{
-    CoordinateDouble p1 = mesh[upperLeftIndices.y][upperLeftIndices.x]; // topLeft
-    CoordinateDouble p2 = mesh[upperLeftIndices.y][upperLeftIndices.x+1]; // topRight
-    CoordinateDouble p3 = mesh[upperLeftIndices.y+1][upperLeftIndices.x]; // bottomLeft
-    CoordinateDouble p4 = mesh[upperLeftIndices.y+1][upperLeftIndices.x+1]; // bottomRight
-    
-    double slopeTop = (p2.y - p1.y) / (p2.x - p1.x);
-    double slopeBottom = (p4.y - p3.y) / (p4.x - p3.x);
-    double slopeLeft = (p1.y - p3.y) / (p1.x - p3.x);
-    double slopeRight = (p2.y - p4.y) / (p2.x - p4.x);
-    
-    double quadraticEpsilon = 0.01;
-    
-    if (slopeTop == slopeBottom && slopeLeft == slopeRight) {
-        
-        // method 3
-        vector<vector<double>> squareMat;
-        vector<double> row1;
-        row1.push_back(p2.x - p1.x);
-        row1.push_back(p3.x - p1.x);
-        squareMat.push_back(row1);
-        vector<double> row2;
-        row2.push_back(p2.y - p1.y);
-        row2.push_back(p3.y - p1.y);
-        squareMat.push_back(row2);
-        
-        vector<vector<double>> vectorMat;
-        vector<double>vrow1;
-        vrow1.push_back(point.x - p1.x);
-        vectorMat.push_back(vrow1);
-        vector<double>vrow2;
-        vrow2.push_back(point.y - p1.y);
-        vectorMat.push_back(vrow2);
-        
-        vector<vector<double>> squareMatInv = matinvGJ(squareMat);
-        vector<vector<double>> solution = matmul(squareMatInv, vectorMat);
-        
-        BilinearWeights weights;
-        weights.s = solution[0][0];
-        weights.t = solution[1][0];
-        return weights;
-        
-    } else if (slopeLeft == slopeRight) {
-        
-        // method 2
-        double a = (p2.x - p1.x)*(p4.y - p3.y) - (p2.y - p1.y)*(p4.x - p3.x);
-        double b = point.y*((p4.x-p3.x)-(p2.x-p1.x))-point.x*((p4.y-p3.y)-(p2.y-p1.y))+p1.x*(p4.y-p3.y)-p1.y*(p4.x-p3.x)+(p2.x-p1.x)*(p3.y)-(p2.y-p1.y)*(p3.x);
-        double c = point.y*(p3.x-p1.x)-point.x*(p3.y-p1.y)+p1.x*p3.y-p3.x*p1.y;
-        
-        double s1 = (-1 * b + sqrt(b*b - 4*a*c)) / (2 * a);
-        double s2 = (-1 * b - sqrt(b*b - 4*a*c)) / (2 * a);
-        double s;
-        if (s1 >= 0 && s1 <= 1) {
-            s = s1;
-        } else if (s2 >= 0 && s2 <= 1) {
-            s = s2;
-        } else {
-            
-            if ((s1 > 1 && s1 - quadraticEpsilon < 1) ||
-                (s2 > 1 && s2 - quadraticEpsilon < 1)) {
-                s = 1;
-            } else if ((s1 < 0 && s1 + quadraticEpsilon > 0) ||
-                       (s2 < 0 && s2 + quadraticEpsilon > 0)) {
-                s = 0;
-            } else {
-                // this case should not happen
-                cerr << "   Could not interpolate s weight for coordinate (" << point.x << "," << point.y << ")." << endl;
-                s = 0;
-            }
-        }
-        
-        double val = (p3.y + (p4.y - p3.y)*s - p1.y - (p2.y - p1.y)*s);
-        double t = (point.y - p1.y - (p2.y - p1.y)*s) / val;
-        double valEpsilon = 0.1; // 0.1 and 0.01 appear identical
-        if (fabs(val) < valEpsilon) {
-            // Py ~= Cy because Dy - Cy ~= 0. So, instead of interpolating with y, we use x.
-            t = (point.x - p1.x - (p2.x - p1.x)*s) / (p3.x + (p4.x - p3.x)*s - p1.x - (p2.x - p1.x)*s);
-        }
-        
-        BilinearWeights weights;
-        weights.s = s;
-        weights.t = t;
-        return weights;
-        
-    } else {
-        
-        // method 1
-        double a = (p3.x - p1.x)*(p4.y - p2.y) - (p3.y - p1.y)*(p4.x - p2.x);
-        double b = point.y*((p4.x - p2.x) - (p3.x - p1.x)) - point.x*((p4.y - p2.y) - (p3.y - p1.y)) + (p3.x - p1.x)*(p2.y) - (p3.y - p1.y)*(p2.x) + (p1.x)*(p4.y - p2.y) - (p1.y)*(p4.x - p2.x);
-        double c = point.y*(p2.x - p1.x) - (point.x)*(p2.y - p1.y) + p1.x*p2.y - p2.x*p1.y;
-        
-        double t1 = (-1 * b + sqrt(b*b - 4*a*c)) / (2 * a);
-        double t2 = (-1 * b - sqrt(b*b - 4*a*c)) / (2 * a);
-        double t;
-        if (t1 >= 0 && t1 <= 1) {
-            t = t1;
-        } else if (t2 >= 0 && t2 <= 1) {
-            t = t2;
-        } else {
-            if ((t1 > 1 && t1 - quadraticEpsilon < 1) ||
-                (t2 > 1 && t2 - quadraticEpsilon < 1)) {
-                t = 1;
-            } else if ((t1 < 0 && t1 + quadraticEpsilon > 0) ||
-                       (t2 < 0 && t2 + quadraticEpsilon > 0)) {
-                t = 0;
-            } else {
-                // this case should not happen
-                cerr << "   Could not interpolate t weight for coordinate (" << point.x << "," << point.y << ")." << endl;
-                t = 0;
-            }
-        }
-        
-        double val = (p2.y + (p4.y - p2.y)*t - p1.y - (p3.y - p1.y)*t);
-        double s = (point.y - p1.y - (p3.y - p1.y)*t) / val;
-        double valEpsilon = 0.1; // 0.1 and 0.01 appear identical
-        if (fabs(val) < valEpsilon) {
-            // Py ~= Ay because By - Ay ~= 0. So, instead of interpolating with y, we use x.
-            s = (point.x - p1.x - (p3.x - p1.x)*t) / (p2.x + (p4.x - p2.x)*t - p1.x - (p3.x - p1.x)*t);
-        }
-        
-        BilinearWeights weights;
-        weights.s = clamp(s, 0, 1);
-        weights.t = clamp(t, 0, 1);
-        return weights;
-    }
 }
 
 /*
@@ -2233,7 +2281,6 @@ Image* ip_rectangle(Image* srcImage)
     
     // === End local warp to get original mesh ===
     
-    
     // === Optimize mesh ===
     
     cerr << " Starting mesh optimization." << endl;
@@ -2246,7 +2293,7 @@ Image* ip_rectangle(Image* srcImage)
     double *theta = new double[numBins];
     double thetaPerBucket = M_PI / numBins;
     for (int i = 0; i < numBins; i++) {
-        theta[i] = i * thetaPerBucket;
+        theta[i] = i * thetaPerBucket - M_PI / 2;
     }
     
     // Get energy
