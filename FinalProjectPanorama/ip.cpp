@@ -1563,6 +1563,9 @@ vector<vector<vector<LineSegment>>> ip_get_line_segments_in_mesh(double* lineSeg
 
 /*
  * Returns the quadratic terms of the line energy of the mesh on the image with the given angle theta.
+ *
+ * NOTE: This method is not correctly implemented, so it returns an empty quadratic. (Todo: Fix this.)
+ *
  */
 Quadratic ip_energy_line(Image* srcImage, vector<vector<CoordinateDouble>> mesh,
                          double *theta, int numBins)

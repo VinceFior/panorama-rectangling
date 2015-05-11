@@ -16,7 +16,6 @@
 enum MenuItem {
     MENU_QUIT,
     MENU_HELP,
-    MENU_FILE_OPEN_QUICK,
     MENU_FILE_OPEN,
     MENU_FILE_SAVE,
     MENU_FILE_INFO,
@@ -42,7 +41,6 @@ enum MenuItem {
 int make_menu ()
 {
     int file = glutCreateMenu(menu_func);
-    glutAddMenuEntry( "Open quick",     MENU_FILE_OPEN_QUICK);
     glutAddMenuEntry( "Open..",         MENU_FILE_OPEN);
     glutAddMenuEntry( "Save..",         MENU_FILE_SAVE);
     glutAddMenuEntry( "Get Image Info",		MENU_FILE_INFO);
@@ -98,12 +96,6 @@ void menu_func (int value)
             
         case MENU_HELP:
             menu_help();
-            break;
-            
-        case MENU_FILE_OPEN_QUICK:
-            if (!quietMode)
-                cerr << "Opening file /Users/vincent/Desktop/input.bmp" << endl;
-            image_load("/Users/vincent/Desktop/input.bmp");
             break;
             
         case MENU_FILE_OPEN:
@@ -276,11 +268,6 @@ void keyboard_func (unsigned char key, int x, int y)
         case 'O':
         case 'o':
             menu_func(MENU_FILE_OPEN);
-            break;
-            
-        case 'I':
-        case 'i':
-            menu_func(MENU_FILE_OPEN_QUICK);
             break;
         
         case 'E':
