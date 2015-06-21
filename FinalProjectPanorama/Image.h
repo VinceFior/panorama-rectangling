@@ -42,8 +42,17 @@ struct Coordinate
     
     bool operator<(const Coordinate& rhs) const
     {
-        return (x < rhs.x);
+        // this operator is used to determine equality, so it must use both x and y
+        if (x < rhs.x) {
+            return true;
+        }
+        if (x > rhs.x) {
+            return false;
+        }
+        return y < rhs.y;
     }
+    Coordinate(){};
+    Coordinate(int setX, int setY) { x = setX; y = setY; };
 };
 
 struct CoordinateDouble
