@@ -11,5 +11,8 @@ This energy function preserves shapes and fits the mesh to a rectangle, but it d
 A significant portion of the code to calculate line preservation is included but is not currently being used.
 
 # How to use
-This application requires the input image to be a simple 24-channel bitmap, and the unfilled space around the image must be white (#FFFFFF).
+This application requires the input image to be a simple 24-bit bitmap, and the unfilled space around the image must be white (#FFFFFF).
 Run the application from XCode, right-click in the application to open an image, and select "Rectangle". You can then save the output as a bitmap.
+
+## Examples
+See [this presentation](https://drive.google.com/file/d/0BxSdeGQZozZSM0dkZ1R0UG0wX0E/view?usp=sharing) for example outputs.
